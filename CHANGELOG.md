@@ -1,3 +1,9 @@
+## [0.3.0](https://github.com/theQRL/qrl-web3-wallet/compare/v0.2.0...v0.3.0) (2026-05-07)
+
+### Features
+
+* close out CIPH-QRLW3-[1-33]  ([#22](https://github.com/theQRL/qrl-web3-wallet/issues/22)) ([972695e](https://github.com/theQRL/qrl-web3-wallet/commit/972695e7ab0d6560d1143af4c2221fb5c38e6587))
+
 ## [0.2.0](https://github.com/theQRL/qrl-web3-wallet/compare/v0.1.1...v0.2.0) (2026-05-03)
 
 ### Features
