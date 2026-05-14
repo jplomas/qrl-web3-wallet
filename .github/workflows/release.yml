@@ -13,6 +13,10 @@ on:
   push:
     branches: [main, master]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -22,10 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.repository == 'theQRL/qrl-web3-wallet'
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
-      id-token: write
+      contents: write # push release commits and tags via semantic-release
+      issues: write # semantic-release opens issues for release failures
+      pull-requests: write # semantic-release comments on released PRs
+      id-token: write # OIDC token (reserved for future signed extension flow)
     outputs:
       released: ${{ steps.check-release.outputs.released }}
       version: ${{ steps.check-release.outputs.version }}
@@ -57,7 +61,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global url."git@github.com:".insteadOf "https://github.com/"
-          git remote set-url origin git@github.com:${{ github.repository }}.git
+          git remote set-url origin "git@github.com:${GITHUB_REPOSITORY}.git"
 
       - name: Semantic Release (version, changelog, GitHub release)
         env:
@@ -73,13 +77,14 @@ jobs:
             -p @semantic-release/exec@6 \
             -p @semantic-release/git@10 \
             -p conventional-changelog-conventionalcommits@8 \
-            semantic-release --repository-url git@github.com:${{ github.repository }}.git
+            semantic-release --repository-url "git@github.com:${GITHUB_REPOSITORY}.git"
 
       - name: Check if release happened
         id: check-release
+        env:
+          OLD_VERSION: ${{ steps.version-before.outputs.version }}
         run: |
           NEW_VERSION=$(node -p "require('./package.json').version")
-          OLD_VERSION="${{ steps.version-before.outputs.version }}"
           echo "Old version: $OLD_VERSION, New version: $NEW_VERSION"
           if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
             echo "released=true" >> "$GITHUB_OUTPUT"
@@ -95,13 +100,14 @@ jobs:
     needs: release
     if: needs.release.outputs.released == 'true'
     permissions:
-      contents: write
+      contents: write # upload the Chrome extension zip to the GitHub Release
     steps:
       - name: Checkout (post-release main, includes the chore(release) commit)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
@@ -110,9 +116,10 @@ jobs:
           cache: 'npm'
 
       - name: Verify checked-out version matches release
+        env:
+          REL_VERSION: ${{ needs.release.outputs.version }}
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
-          REL_VERSION="${{ needs.release.outputs.version }}"
           if [ "$PKG_VERSION" != "$REL_VERSION" ]; then
             echo "::error::package.json version ($PKG_VERSION) does not match released version ($REL_VERSION)"
             exit 1
@@ -125,8 +132,9 @@ jobs:
         run: npm run build
 
       - name: Package zip
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
-          VERSION="${{ needs.release.outputs.version }}"
           mkdir -p "qrl-web3-wallet-chrome-v${VERSION}"
           cp -r Extension/* "qrl-web3-wallet-chrome-v${VERSION}/"
           zip -r "qrl-web3-wallet-chrome-v${VERSION}.zip" "qrl-web3-wallet-chrome-v${VERSION}"
@@ -135,8 +143,8 @@ jobs:
       - name: Upload zip to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release.outputs.version }}
         run: |
-          VERSION="${{ needs.release.outputs.version }}"
           gh release upload "v${VERSION}" "qrl-web3-wallet-chrome-v${VERSION}.zip" \
-            --repo "${{ github.repository }}" \
+            --repo "${GITHUB_REPOSITORY}" \
             --clobber
