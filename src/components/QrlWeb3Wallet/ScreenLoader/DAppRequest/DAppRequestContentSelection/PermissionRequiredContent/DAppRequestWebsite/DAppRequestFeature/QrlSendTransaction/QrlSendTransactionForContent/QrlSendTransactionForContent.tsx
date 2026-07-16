@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useEffect } from "react";
 import { SEND_TRANSACTION_TYPES } from "../QrlSendTransaction";
 import { utils, qrl } from "@theqrl/web3";
+import { revalidateAuthorizedDAppRequest } from "@/scripts/utils/restrictedMethodsMiddlewareUtils";
 
 type DAppTransactionReceipt = {
   transactionHash?: string;
@@ -79,6 +80,13 @@ const QrlSendTransactionForContent = observer(
       if (isConnected) {
         const onPermissionCallBack = async (hasApproved: boolean) => {
           if (hasApproved) {
+            const authorization = await revalidateAuthorizedDAppRequest(
+              dAppRequestData,
+            );
+            if (!authorization.canProceed) {
+              addToResponseData({ error: authorization.proceedError });
+              return;
+            }
             if (transactionType === SEND_TRANSACTION_TYPES.QRL_TRANSFER) {
               await sendZndTransfer();
             } else {
@@ -88,7 +96,7 @@ const QrlSendTransactionForContent = observer(
         };
         setOnPermissionCallBack(onPermissionCallBack);
       }
-    }, [isConnected, transactionType]);
+      }, [isConnected, transactionType, dAppRequestData]);
 
     const copyData = () => {
       navigator.clipboard.writeText(data);

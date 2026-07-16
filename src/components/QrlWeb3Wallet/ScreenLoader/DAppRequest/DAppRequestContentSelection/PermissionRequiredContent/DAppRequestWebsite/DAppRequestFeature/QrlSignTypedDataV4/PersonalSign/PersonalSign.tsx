@@ -16,6 +16,7 @@ import { Copy } from "lucide-react";
 import { observer } from "mobx-react-lite";
 import { useTranslation } from "react-i18next";
 import { useEffect } from "react";
+import { revalidateAuthorizedDAppRequest } from "@/scripts/utils/restrictedMethodsMiddlewareUtils";
 
 const PersonalSign = observer(() => {
   const { t } = useTranslation();
@@ -52,12 +53,19 @@ const PersonalSign = observer(() => {
     if (isConnected) {
       const onPermissionCallBack = async (hasApproved: boolean) => {
         if (hasApproved) {
-          personalSign();
+          const authorization = await revalidateAuthorizedDAppRequest(
+            dAppRequestData,
+          );
+          if (!authorization.canProceed) {
+            addToResponseData({ error: authorization.proceedError });
+            return;
+          }
+          await personalSign();
         }
       };
       setOnPermissionCallBack(onPermissionCallBack);
     }
-  }, [isConnected]);
+  }, [isConnected, dAppRequestData]);
 
   const copyMessage = () => {
     navigator.clipboard.writeText(challenge);
