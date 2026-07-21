@@ -6,7 +6,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/UI/Tooltip";
-import { getHexSeedFromMnemonic } from "@/functions/getHexSeedFromMnemonic";
 import { useStore } from "@/stores/store";
 import type { TransactionHistoryEntry } from "@/types/transactionHistory";
 import StringUtil from "@/utilities/stringUtil";
@@ -55,7 +54,7 @@ const QrlSendTransactionForContent = observer(
       ledgerStore,
       transactionHistoryStore,
     } = useStore();
-    const { getMnemonicPhrases } = lockStore;
+    const { getAccountSeed } = lockStore;
     const { qrlInstance, getGasFeeData, qrlConnection } = qrlStore;
     const { isConnected, blockchain } = qrlConnection;
     const {
@@ -212,11 +211,10 @@ const QrlSendTransactionForContent = observer(
 
           rawTransactionToSend = await ledgerStore.signAndSerializeTransaction(from ?? "", txData, common);
         } else {
-          // Regular account - use mnemonic-based signing
-          const mnemonicPhrases = await getMnemonicPhrases(from ?? "");
+          const seed = await getAccountSeed(from ?? "");
           const signedTransaction = await qrlInstance?.accounts.signTransaction(
             transactionObject,
-            getHexSeedFromMnemonic(mnemonicPhrases),
+            seed,
           );
           rawTransactionToSend = signedTransaction?.rawTransaction;
         }
@@ -314,11 +312,10 @@ const QrlSendTransactionForContent = observer(
 
           rawTransactionToSend = await ledgerStore.signAndSerializeTransaction(from, txData, common);
         } else {
-          // Regular account - use mnemonic-based signing
-          const mnemonicPhrases = await getMnemonicPhrases(from ?? "");
+          const seed = await getAccountSeed(from ?? "");
           const signedTransaction = await qrlInstance?.accounts.signTransaction(
             transactionObject,
-            getHexSeedFromMnemonic(mnemonicPhrases),
+            seed,
           );
           rawTransactionToSend = signedTransaction?.rawTransaction;
         }

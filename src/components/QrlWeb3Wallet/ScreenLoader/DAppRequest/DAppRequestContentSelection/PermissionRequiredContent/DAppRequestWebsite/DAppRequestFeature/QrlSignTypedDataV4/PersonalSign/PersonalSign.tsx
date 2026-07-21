@@ -5,7 +5,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/UI/Tooltip";
-import { getHexSeedFromMnemonic } from "@/functions/getHexSeedFromMnemonic";
 import { useStore } from "@/stores/store";
 import StringUtil, { sanitizeForDisplay } from "@/utilities/stringUtil";
 import { MLDSA87, ExtendedSeed } from "@theqrl/wallet.js";
@@ -21,7 +20,7 @@ import { revalidateAuthorizedDAppRequest } from "@/scripts/utils/restrictedMetho
 const PersonalSign = observer(() => {
   const { t } = useTranslation();
   const { lockStore, qrlStore, dAppRequestStore } = useStore();
-  const { getMnemonicPhrases } = lockStore;
+  const { getAccountSeed } = lockStore;
   const { qrlInstance, qrlConnection } = qrlStore;
   const { isConnected } = qrlConnection;
   const {
@@ -73,12 +72,11 @@ const PersonalSign = observer(() => {
 
   const personalSign = async () => {
     try {
-      const mnemonicPhrases = await getMnemonicPhrases(fromAddress ?? "");
-      const seed = getHexSeedFromMnemonic(mnemonicPhrases);
-      const addressFromMnemonic =
+      const seed = await getAccountSeed(fromAddress ?? "");
+      const addressFromSeed =
         qrlInstance?.accounts.seedToAccount(seed)?.address;
-      if (fromAddress !== addressFromMnemonic) {
-        throw new Error("Mnemonic phrases did not match with the address");
+      if (fromAddress.toLowerCase() !== addressFromSeed?.toLowerCase()) {
+        throw new Error("Account seed did not match with the address");
       }
       const signature = qrlInstance?.accounts.sign(
         params?.[0],
