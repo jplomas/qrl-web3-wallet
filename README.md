@@ -1,5 +1,18 @@
-> [!NOTE]
-> This code relates to QRL v2.0 Testnet.  This extension is not suitable for current QRL Mainnet (v1).  See [theqrl.org](https://theqrl.org) for release announcements.
+> [!CAUTION]
+> **Pre-release software. Do not use it to hold anything of value.**
+>
+> This extension is unreleased, unaudited-in-production code under active
+> development. It has not been through a full release cycle and its behaviour
+> may change without notice.
+>
+> - **There is no public network to use it on yet.** This code targets QRL v2.0
+>   (Zond) Testnet, which is **not yet publicly available**. Without access to a
+>   Zond node there is nothing for the wallet to connect to.
+> - **It is not suitable for QRL Mainnet (v1)** and cannot send real QRL.
+> - **Do not import an existing seed or mnemonic that holds funds on any
+>   network.** Create throwaway accounts only.
+>
+> Watch [theqrl.org](https://theqrl.org) for testnet and release announcements.
 
 
 ![QRL Web3 Wallet Preview Cover](misc/zond_web3_wallet_preview_cover.png)
@@ -22,7 +35,21 @@ The pre-built extension is published as a `.zip` on every tagged release. To ins
 
 The same flow works on Brave, Edge, Vivaldi, and other Chromium-based browsers. Firefox is not currently supported.
 
-> Releases are signed and tagged by the project's release pipeline. Always download from the official `theQRL/qrl-web3-wallet` GitHub releases page. **Never** download or install from a third-party mirror.
+Always download from the official `theQRL/qrl-web3-wallet` GitHub releases page. **Never** download or install from a third-party mirror.
+
+### Verifying a release
+
+Release assets carry a SHA-256 checksum and a [build-provenance attestation](https://docs.github.com/en/actions/security-guides/using-artifact-attestations), so you can confirm a zip was produced by this repository's own pipeline from a specific commit:
+
+```sh
+# Checksum: compare against the published .sha256 file
+shasum -a 256 -c qrl-web3-wallet-chrome-vX.Y.Z.zip.sha256
+
+# Provenance: confirm which workflow and commit built it
+gh attestation verify qrl-web3-wallet-chrome-vX.Y.Z.zip --repo theQRL/qrl-web3-wallet
+```
+
+If either check fails, do not install the extension. Note that releases published *before* provenance was enabled carry no attestation and cannot be verified this way.
 
 > [!WARNING]
 > **Seeing a "Manifest file is missing or unreadable" error?**
@@ -47,7 +74,7 @@ Building from source produces the same `Extension/` folder that's published on t
 ```sh
 git clone https://github.com/theQRL/qrl-web3-wallet.git
 cd qrl-web3-wallet
-npm install
+npm ci          # `npm ci`, not `npm install` — installs exactly the pinned lockfile
 npm run build
 ```
 
@@ -74,15 +101,24 @@ npm run lint   # eslint
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
 | Extension manifest   | Source manifest template that Vite reads at build time, transforms (injects version), and emits to `Extension/manifest.json`. Kept under `src/` so the repo root cannot be mistakenly loaded as an unpacked extension. | [src/manifest.json](src/manifest.json)                                                                                                                                                                                                                                              | :green_circle: |
 | Theming              | Based on the system theme, extension will be displayed in light or dark theme.                                                                                                                                                                        | [index.css](src/index.css) [tailwind.config.js](tailwind.config.js)                                                                                                                                                                                                         | :green_circle: |
-| Blockchain selection | The user can connect the wallet to a local QRL node, QRL testnet or QRL mainnet. Mainnet can be used for real transactions, and the other two can be used for testing and demo.                                                                       | [ChainBadge.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Header/ChainBadge/ChainBadge.tsx)                                                                                                                                                                         | :green_circle: |
+| Blockchain selection | Connect to a Zond node, and add or edit custom chains. The built-in "Zond Mainnet" entry points at `127.0.0.1:8545` and so requires a locally-running node; the testnet entry points at a QRL-operated node over **plain HTTP, which is a pre-release configuration and not supported for production** — on an untrusted network, treat anything it reports as modifiable in transit. Subscriptions (`qrl_subscribe`) require a WebSocket endpoint to be configured explicitly and are unsupported otherwise. Real-value QRL Mainnet (v1) is **not** supported — see the warning at the top of this file.                                                                       | [ChainBadge.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Header/ChainBadge/ChainBadge.tsx)                                                                                                                                                                         | :green_circle: |
 | Create account       | The user can create a new account just with the click of a button. The newly created account address along with its secret recovery phrases will be presented to the user for download.                                                              | [CreateAccount.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Body/CreateAccount/CreateAccount.tsx)                                                                                                                                                                  | :green_circle: |
 | Import account       | If the user has recovery phrases of an account created in the past, that account can be imported to the wallet.                                                                                                                                       | [ImportAccount.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Body/ImportAccount/ImportAccount.tsx)                                                                                                                                                                  | :green_circle: |
 | Account list         | List of accounts created or imported are stored locally, and displayed to the user. The user can switch to a different account in the wallet.                                                                                                         | [AccountList.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Body/AccountList/AccountList.tsx)                                                                                                                                                                        | :green_circle: |
-| User Password        | Ideally, the user entered password should be used to encrypt the account recovery phrases, so that the user can use their password for transactions each time. This needs to be first implemented in the QRL web3.js library.                         | [Lock.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Lock/Lock.tsx) [lockManager.ts](src/scripts/lockManager/lockManager.ts)                                                                                                                                                | :green_circle: |
-| Transaction          | The user can send `QRL` to other addresses. The receiver's account address, the amount and the user's secret mnemonic phrases (user's password will be used in the future) are required to make the transaction.                                     | [TokenTransfer.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Body/TokenTransfer/TokenTransfer.tsx)                                                                                                                                                                  | :green_circle: |
+| User Password        | Account seeds are encrypted at rest with a password-derived key (Argon2id, 256 MiB / t=8) under AES-256-GCM, and unlocked into memory for the session. An idle auto-lock clears them again. | [Lock.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Lock/Lock.tsx) [lockManager.ts](src/scripts/lockManager/lockManager.ts)                                                                                                                                                | :green_circle: |
+| Transaction          | Send the native coin to another address, or to a QRNS (`*.qrl`) name that the wallet resolves on chain. Signing uses the seed held in the unlocked session — no mnemonic re-entry per transaction. | [TokenTransfer.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Body/TokenTransfer/TokenTransfer.tsx)                                                                                                                                                                  | :green_circle: |
 | Gas Fee              | Before making a transaction, the user can see an estimated gas fee amount.                                                                                                                                                                            | [GasFeeNotice.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Body/TokenTransfer/GasFeeNotice/GasFeeNotice.tsx)                                                                                                                                                       | :green_circle: |
 | Wallet connect       | Online dApps present the user with a `Connect` button. To connect the wallet with the dApps, multi-wallet support based on EIP-6963 is implemented.                                                                                                   | [DAppRequest.tsx](src/components/QrlWeb3Wallet/ScreenLoader/DAppRequest/DAppRequest.tsx) [middlewares](src/scripts/middlewares) [inPageScript.ts](src/scripts/inPageScript.ts)                                                                                              | :green_circle: |
 | ZRC-20 Tokens        | The wallet supports `ZRC-20` tokens. The users can import and send the ZRC-20 tokens from the wallet.                                                                                                                                                 | [ImportToken.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Body/ImportToken/ImportToken.tsx) [TokensCardContent.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Body/Home/AccountCreateImport/ActiveAccountDisplay/TokensCardContent/TokensCardContent.tsx)    | :green_circle: |
+| ZRC-721 NFTs         | Import NFT collections, view them per account, and transfer a token. | [NFTTransfer.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Body/NFTTransfer/NFTTransfer.tsx) [ImportNFTCollection](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Body/ImportNFTCollection) | :green_circle: |
+| Ledger hardware wallet | Derive and import accounts from a Ledger device over WebHID and sign transactions on-device with ML-DSA-87. | [ledgerService.ts](src/services/ledger/ledgerService.ts) [ledgerStore.ts](src/stores/ledgerStore.ts) | :yellow_circle: |
+| Typed-data signing   | `personal_sign` and `qrl_signTypedData_v4`, with the domain and message shown for review before signing. | [QrlSignTypedDataV4](src/components/QrlWeb3Wallet/ScreenLoader/DAppRequest/DAppRequestContentSelection/PermissionRequiredContent/DAppRequestWebsite/DAppRequestFeature/QrlSignTypedDataV4) | :green_circle: |
+| QRNS name resolution | Resolve a `*.qrl` name to an address on chain when sending. The resolved address is validated before it is used as the recipient. | [qrnsResolver.ts](src/utilities/qrnsResolver.ts) | :green_circle: |
+| Contacts             | A local address book, selectable as a transfer recipient. | [ContactsPage.tsx](src/components/QrlWeb3Wallet/ScreenLoader/Wallet/Body/Contacts/ContactsPage.tsx) | :green_circle: |
+| Auto-lock            | Clears decrypted seeds from memory after a configurable idle period. | [lockManager.ts](src/scripts/lockManager/lockManager.ts) | :green_circle: |
+| Phishing detection   | Warns on dApp requests from domains on the MetaMask `eth-phishing-detect` list, refreshed daily. Advisory for approval-gated methods; account enumeration and raw broadcast are refused outright. | [phishingDetector.ts](src/scripts/phishing/phishingDetector.ts) | :yellow_circle: |
+| Side panel           | The wallet can be opened in the browser side panel or a full tab as well as the toolbar popup. | [serviceWorker.ts](src/scripts/serviceWorker.ts) | :green_circle: |
+| Transaction history  | Per-account, per-chain history with pending-state polling. | [transactionHistoryStore.ts](src/stores/transactionHistoryStore.ts) | :green_circle: |
 
 ## :hammer_and_wrench: Built with
 
