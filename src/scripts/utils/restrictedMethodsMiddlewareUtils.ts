@@ -7,6 +7,7 @@ import { RESTRICTED_METHODS } from "../constants/requestConstants";
 import StorageUtil from "@/utilities/storageUtil";
 import { MAX_SAFE_CHAIN_ID } from "@/constants/blockchain";
 import { BlockchainDataType } from "@/configuration/qrlBlockchainConfig";
+import AddressUtil from "@/utilities/addressUtil";
 import {
   CAVEAT_TYPES,
   DAppRequestType,
@@ -244,6 +245,20 @@ export const checkWalletAddQrlChainParams = async (
       canProceed: false,
       proceedError: rpcErrors.invalidParams({
         message: `Received unexpected keys on object parameter. Unsupported keys: ${extraKeys}`,
+      }),
+    };
+  }
+
+  const qrnsRegistryAddress = chainData?.qrnsRegistryAddress;
+  if (
+    qrnsRegistryAddress !== undefined &&
+    (typeof qrnsRegistryAddress !== "string" ||
+      !AddressUtil.isQrlAddress(qrnsRegistryAddress))
+  ) {
+    return {
+      canProceed: false,
+      proceedError: rpcErrors.invalidParams({
+        message: `Expected 64-byte Q-prefixed 'qrnsRegistryAddress'. Received: ${qrnsRegistryAddress}`,
       }),
     };
   }
