@@ -8,6 +8,7 @@
   "lock.unlock.buttonLoading": "Entsperren...",
   "lock.unlock.errorIncorrect": "Das eingegebene Passwort ist falsch",
   "lock.unlock.errorFailed": "Wallet konnte nicht entsperrt werden. Bitte versuche es erneut.",
+  "lock.unlock.errorLegacyFormat": "Das Passwort ist nicht das Problem. Diese Konten wurden mit einem früheren Vorab-Adressformat erstellt und können nicht mehr geöffnet werden. Installiere die Erweiterung neu und importiere jedes Konto erneut über seine Wiederherstellungsphrase.",
 
   "welcome.title": "Willkommen",
   "welcome.description": "Lass uns QRL Web3 Wallet verwenden",

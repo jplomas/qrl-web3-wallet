@@ -1,17 +1,12 @@
 import StorageUtil, { LockState } from "@/utilities/storageUtil";
-import { Bytes, KeyStore } from "@theqrl/web3";
+import { Bytes } from "@theqrl/web3";
 import { decrypt, encrypt } from "@theqrl/web3-qrl-accounts";
 import { getMnemonicFromHexSeed } from "@/functions/getMnemonicFromHexSeed";
 import { RECOMMENDED_KEYSTORE_KDF_PARAMS } from "@/scripts/lockManager/keystoreParams";
 import {
-  isLegacyKeystoreLabel,
-  recoverKeystoreAddress,
-  relabelKeystore,
-} from "@/scripts/lockManager/keystoreAddressMigration";
-import {
-  migrateStoredAddresses,
-  type StoredAddressRemap,
-} from "@/utilities/storedAddressMigration";
+  assertNoLegacyKeystores,
+  LegacyKeystoreFormatError,
+} from "@/scripts/lockManager/legacyKeystoreCheck";
 import browser from "webextension-polyfill";
 
 type MessageType = {
@@ -204,6 +199,8 @@ class LockManager {
    * Called via a dedicated port connection so there is no message-channel
    * timeout — the port stays open as long as needed.
    * Returns true on success, false on wrong password or empty keystores.
+   * Throws `LegacyKeystoreFormatError` when the vault predates the 64-byte
+   * address format, which is not an authentication failure.
    */
   static async unlock(password: string): Promise<boolean> {
     try {
@@ -212,61 +209,21 @@ class LockManager {
       const normalisedPassword = password.normalize("NFC");
       const keyStores = await StorageUtil.getKeystores();
       if (!keyStores.length) return false;
+      // A keystore predating the 64-byte address format cannot be decrypted by
+      // the current library. Fail here with an accurate error rather than
+      // letting it surface as "incorrect password". See legacyKeystoreCheck.ts.
+      assertNoLegacyKeystores(keyStores);
       const decryptedKeys: DecryptedKeyType[] = [];
-      let migratedKeystores: KeyStore[] | undefined;
-      const addressRemaps: StoredAddressRemap[] = [];
       for (const keyStore of keyStores) {
         // Yield the event loop between decryptions so Chrome
         // doesn't consider the service worker unresponsive.
         await new Promise((r) => setTimeout(r, 0));
-        // Repair a stale pre-64-byte address label before decrypting; the
-        // current library rejects the keystore outright otherwise. See
-        // keystoreAddressMigration.ts.
-        let effectiveKeyStore = keyStore;
-        if (isLegacyKeystoreLabel(keyStore)) {
-          const recovered = await recoverKeystoreAddress(
-            keyStore,
-            normalisedPassword,
-          );
-          if (recovered) {
-            effectiveKeyStore = relabelKeystore(keyStore, recovered.address);
-            addressRemaps.push({
-              from: String(keyStore.address),
-              to: recovered.address,
-            });
-            if (!migratedKeystores) migratedKeystores = [...keyStores];
-            const idx = migratedKeystores.findIndex(
-              (k) => k.address === keyStore.address,
-            );
-            if (idx >= 0) migratedKeystores[idx] = effectiveKeyStore;
-          }
-        }
-        const { address, seed } = await decrypt(
-          effectiveKeyStore,
-          normalisedPassword,
-        );
+        const { address, seed } = await decrypt(keyStore, normalisedPassword);
         decryptedKeys.push({
           address,
           seed,
           mnemonicPhrases: getMnemonicFromHexSeed(seed),
         });
-      }
-      if (migratedKeystores) {
-        try {
-          // Order matters: repoint the data that references the old addresses
-          // before the keystores stop advertising them, so an interrupted
-          // migration leaves the labels stale and retryable rather than leaving
-          // orphaned data behind a completed relabel.
-          await migrateStoredAddresses(addressRemaps);
-          await StorageUtil.setKeystores(migratedKeystores);
-        } catch (error) {
-          // Non-fatal: the unlock itself succeeded. Both steps are idempotent and
-          // will be retried on the next unlock.
-          console.warn(
-            "QrlWeb3Wallet: failed to complete stored address migration",
-            error,
-          );
-        }
       }
       this.walletPassword = normalisedPassword;
       await this.setDecryptedKeys(
@@ -277,9 +234,12 @@ class LockManager {
         ),
       );
       return true;
-    } catch {
+    } catch (error) {
       this.clearDecryptedKeys();
       this.walletPassword = undefined;
+      // A stale keystore format is not a wrong password. Propagate it so the
+      // caller can say what is actually wrong.
+      if (error instanceof LegacyKeystoreFormatError) throw error;
       return false;
     }
   }

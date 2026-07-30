@@ -59,6 +59,11 @@ If either check fails, do not install the extension. Note that releases publishe
 > - **If you downloaded the release zip**: make sure you selected the **unzipped folder** (e.g. `qrl-web3-wallet-chrome-v0.2.0/`) — not the `.zip` file itself, and not a parent directory.
 > - **If you cloned the repo**: the project root is *not* a loadable extension. Run `npm run build` first, then load the generated `Extension/` folder: see below.
 
+> [!WARNING]
+> **Wallet won't unlock after updating, and you're sure the password is right?**
+>
+> Accounts created by an early pre-release build used a shorter address format and cannot be opened by the current one. The wallet detects this and says so rather than blaming your password. Remove the extension, reinstall it, and import each account again from its recovery phrase — the phrase itself is unchanged and still derives the same account. Locally stored contacts, imported tokens and transaction history are not carried over.
+
 ## :keyboard: Build from source (for developers)
 
 Building from source produces the same `Extension/` folder that's published on the release page. The CI pipeline (`.github/workflows/release.yml`) uses these steps.

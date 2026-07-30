@@ -8,6 +8,7 @@
   "lock.unlock.buttonLoading": "Unlocking",
   "lock.unlock.errorIncorrect": "The entered password is incorrect",
   "lock.unlock.errorFailed": "Failed to unlock wallet. Please try again.",
+  "lock.unlock.errorLegacyFormat": "Your password is not the problem. These accounts were created with an earlier pre-release address format and can no longer be opened. Reinstall the extension and import each account again from its recovery phrase.",
 
   "welcome.title": "Welcome",
   "welcome.description": "Let's start using the QRL Web3 Wallet",

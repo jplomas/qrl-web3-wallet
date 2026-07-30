@@ -7,10 +7,7 @@ import type {
   ChangePasswordWorkerResponse,
 } from "@/scripts/workers/changePasswordWorker";
 import StorageUtil, { LockState } from "@/utilities/storageUtil";
-import {
-  migrateStoredAddresses,
-  type StoredAddressRemap,
-} from "@/utilities/storedAddressMigration";
+import { assertNoLegacyKeystores } from "@/scripts/lockManager/legacyKeystoreCheck";
 import { KeyStore, Web3BaseWalletAccount } from "@theqrl/web3";
 
 /**
@@ -337,11 +334,16 @@ class LockStore {
     // Read keystores and decrypt in a Web Worker (separate thread).
     const keyStores = await StorageUtil.getKeystores();
     if (!keyStores.length) return false;
+    // A keystore predating the 64-byte address format cannot be decrypted by
+    // the current library, and a failed decrypt is reported to the user as a
+    // wrong password. Detect it here — from the label alone, before the worker
+    // spends Argon2id time on a vault that cannot open — so the UI can say what
+    // is actually wrong. See legacyKeystoreCheck.ts.
+    assertNoLegacyKeystores(keyStores);
 
     const workerResult = await new Promise<{
       keys: DecryptedKeyType[];
       upgradedKeystores?: KeyStore[];
-      addressMigrations?: StoredAddressRemap[];
     } | null>((resolve) => {
       const worker = new Worker(
         new URL("../scripts/workers/unlockWorker.ts", import.meta.url),
@@ -352,7 +354,6 @@ class LockStore {
           success: boolean;
           keys?: DecryptedKeyType[];
           upgradedKeystores?: KeyStore[];
-          addressMigrations?: StoredAddressRemap[];
         }>,
       ) => {
         worker.terminate();
@@ -360,7 +361,6 @@ class LockStore {
           resolve({
             keys: event.data.keys,
             upgradedKeystores: event.data.upgradedKeystores,
-            addressMigrations: event.data.addressMigrations,
           });
         } else {
           resolve(null);
@@ -379,32 +379,9 @@ class LockStore {
     }
     const decryptedKeys = workerResult.keys;
 
-    // If the worker repaired any pre-64-byte address labels, repoint the stored
-    // data that referenced the old addresses first. Doing this before the
-    // keystores stop advertising the old labels means an interrupted migration
-    // is retryable rather than leaving orphaned data behind a completed relabel.
-    if (workerResult.addressMigrations?.length) {
-      try {
-        const changed = await migrateStoredAddresses(
-          workerResult.addressMigrations,
-        );
-        if (changed.length) {
-          console.info(
-            `QrlWeb3Wallet: migrated stored addresses in ${changed.join(", ")}`,
-          );
-        }
-      } catch (error) {
-        console.warn(
-          "QrlWeb3Wallet: failed to migrate stored addresses",
-          error,
-        );
-      }
-    }
-
-    // If the worker re-encrypted any keystores with stronger KDF parameters, or
-    // rewrote a stale address label, persist them in place of the previous
-    // keystores so the user benefits automatically without re-entering their
-    // password.
+    // If the worker re-encrypted any keystores with stronger KDF parameters,
+    // persist them in place of the previous keystores so the user benefits
+    // automatically without re-entering their password.
     if (workerResult.upgradedKeystores?.length) {
       try {
         await StorageUtil.setKeystores(workerResult.upgradedKeystores);

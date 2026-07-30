@@ -23,6 +23,7 @@ import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { useStore } from "@/stores/store";
+import { isLegacyKeystoreFormatError } from "@/scripts/lockManager/legacyKeystoreCheck";
 import { observer } from "mobx-react-lite";
 import { useEffect, useState } from "react";
 
@@ -67,8 +68,12 @@ const LockPasswordCheck = observer(() => {
         });
       }
     } catch (error) {
-      const message =
-        error instanceof Error
+      // A vault predating the 64-byte address format cannot be opened at all,
+      // and reporting that as a password problem sends the user round in
+      // circles retyping a password that is correct.
+      const message = isLegacyKeystoreFormatError(error)
+        ? t("lock.unlock.errorLegacyFormat")
+        : error instanceof Error
           ? error.message
           : t("lock.unlock.errorFailed");
       setError("password", { message });

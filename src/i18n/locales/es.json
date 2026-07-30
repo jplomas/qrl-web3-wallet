@@ -8,6 +8,7 @@
   "lock.unlock.buttonLoading": "Desbloqueando",
   "lock.unlock.errorIncorrect": "La contraseña ingresada es incorrecta",
   "lock.unlock.errorFailed": "Error al desbloquear la billetera. Por favor, inténtalo de nuevo.",
+  "lock.unlock.errorLegacyFormat": "Tu contraseña no es el problema. Estas cuentas se crearon con un formato de dirección anterior a la versión final y ya no se pueden abrir. Reinstala la extensión e importa cada cuenta de nuevo desde su frase de recuperación.",
 
   "welcome.title": "Bienvenido",
   "welcome.description": "Comencemos a usar QRL Web3 Wallet",
