@@ -12,6 +12,7 @@ import {
 import LockManager, { LOCK_MANAGER_MESSAGES } from "./lockManager/lockManager";
 import { appendSenderDataMiddleware } from "./middlewares/appendSenderDataMiddleware";
 import { blockUnSupportedMethodsMiddleware } from "./middlewares/blockUnSupportedMethodsMiddleware";
+import { withMiddlewareErrorBoundary } from "./middlewares/middlewareErrorBoundary";
 import { restrictedMethodsMiddleware } from "./middlewares/restrictedMethodsMiddleware";
 import { unrestrictedMethodsMiddleware } from "./middlewares/unrestrictedMethodsMiddleware";
 import {
@@ -151,10 +152,24 @@ const setupProviderEngineEip1193 = ({
   engine.push(blockUnSupportedMethodsMiddleware);
   // Appends the sender details to the request.
   engine.push(appendSenderDataMiddleware({ sender }));
+  // The async middlewares are wrapped so an unexpected rejection always settles
+  // the request instead of leaving the caller's promise pending forever — the
+  // vendored engine's try/catch is synchronous and cannot see it.
+  // See CIPH-QRLW326-30.
   // Handles the unrestricted method calls without requiring user's approval
-  engine.push(unrestrictedMethodsMiddleware);
+  engine.push(
+    withMiddlewareErrorBoundary(
+      unrestrictedMethodsMiddleware,
+      "unrestrictedMethodsMiddleware",
+    ),
+  );
   // Handles the dApp's connect wallet functionality
-  engine.push(restrictedMethodsMiddleware);
+  engine.push(
+    withMiddlewareErrorBoundary(
+      restrictedMethodsMiddleware,
+      "restrictedMethodsMiddleware",
+    ),
+  );
 
   return engine;
 };

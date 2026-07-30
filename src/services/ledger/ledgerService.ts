@@ -274,7 +274,7 @@ class LedgerService {
    * Fetches address for given derivation path (without public key).
    *
    * This is a fast operation that only returns the address.
-   * Use getPublicKey() if you need the full Dilithium public key.
+   * Use getPublicKey() if you need the full ML-DSA-87 public key.
    *
    * GET_PUBLIC_KEY PROTOCOL:
    * ========================
@@ -335,7 +335,7 @@ class LedgerService {
    * RESPONSE FORMAT (with public key):
    * ┌────────┬───────────────────┬─────────────────────┬────────┐
    * │ PREFIX │     ADDRESS       │     PUBLIC_KEY      │   SW   │
-   * │  'Q'   │    64 bytes       │     2528 bytes      │   2B   │
+   * │  'Q'   │    64 bytes       │     2592 bytes      │   2B   │
    * │  1B    │    (hex)          │                     │        │
    * └────────┴───────────────────┴─────────────────────┴────────┘
    *
@@ -451,7 +451,7 @@ class LedgerService {
    * P1=0x02 means "last data, start signing"
    * At this stage Ledger displays TX on screen and waits for approval.
    *
-   * Receive Dilithium signature chunks (~2420 bytes)
+   * Receive ML-DSA-87 signature chunks (4627 bytes)
    * First chunk is returned automatically.
    * Remaining 17 chunks are fetched via:
    * ┌──────┬──────┬──────┬──────┬──────┬──────┐
@@ -462,7 +462,7 @@ class LedgerService {
    *
    * @param derivationPath - BIP-44 path of signing key
    * @param rlpEncodedTx - RLP-encoded transaction (hex string or Buffer)
-   * @returns Signed transaction with Dilithium signature
+   * @returns Signed transaction with ML-DSA-87 signature
    */
   async signTransaction(
     derivationPath: string,
@@ -520,7 +520,7 @@ class LedgerService {
       // Check status of first signature chunk
       checkStatusWord(signatureResponse);
 
-      // Dilithium signature is returned in 18 chunks. Each chunk must be
+      // The ML-DSA-87 signature is returned in 18 chunks. Each chunk must be
       // non-empty; an empty chunk indicates a transport fault or padded
       // response that cannot be trusted (F-12).
       const firstChunk = extractResponseData(signatureResponse);
@@ -546,8 +546,9 @@ class LedgerService {
         signatureChunks.push(chunkData);
       }
 
-      // Combine all chunks. Bound the assembled length: ML-DSA-87 sigs sit
-      // around 2420 bytes, with some implementation variance. Reject
+      // Combine all chunks and bound the assembled length. NOTE: the configured
+      // maximum (4096) is below the 4627-byte ML-DSA-87 signature size — see
+      // CIPH-QRLW326-32, unresolved pending a device/Speculos run. Reject
       // responses outside the configured envelope.
       const fullSignature = combineSignatureChunks(signatureChunks);
       if (

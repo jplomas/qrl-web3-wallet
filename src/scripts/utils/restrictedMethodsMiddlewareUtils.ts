@@ -30,15 +30,42 @@ const getFromAddress = (req: JsonRpcRequest<JsonRpcRequest>) => {
   }
 };
 
+/**
+ * The origin that made a request, or `""` when it cannot be identified.
+ *
+ * Opaque origins serialise to the string `"null"` — `file://` documents and
+ * sandboxed frames all produce it — so keying permissions by them puts every
+ * such document in one shared bucket: a grant made from one local file would be
+ * held by any other, including files arriving from untrusted sources. Returning
+ * `""` makes the authorisation checks fail closed (no stored grant can match) and
+ * prevents a grant ever being written for an unidentifiable origin.
+ * See CIPH-QRLW326-31.
+ */
+export const getRequestOrigin = (url: string | undefined): string => {
+  try {
+    const origin = new URL(url ?? "").origin;
+    return origin === "null" ? "" : origin;
+  } catch {
+    return "";
+  }
+};
+
 export const checkAccountHasBeenAuthorized = async (
   req: JsonRpcRequest<JsonRpcRequest>,
 ) => {
   const fromAddress = getFromAddress(req);
-  const urlOrigin = new URL(req?.senderData?.url ?? "").origin;
+  const urlOrigin = getRequestOrigin(req?.senderData?.url);
   const connectedAccounts =
     await StorageUtil.getDAppsConnectedAccountsData(urlOrigin);
+  // Case-normalised, like every other address comparison in the codebase. QRL
+  // addresses carry a mixed-case checksum and EVM tooling conventionally
+  // lowercases them, so an exact match denied correctly-authorised dApps and told
+  // the user their account was not authorised. See CIPH-QRLW326-23.
+  const normalisedFrom = fromAddress?.toLowerCase();
   const hasAddressConnected =
-    connectedAccounts?.accounts.includes(fromAddress) ?? false;
+    connectedAccounts?.accounts.some(
+      (account) => account?.toLowerCase() === normalisedFrom,
+    ) ?? false;
   return {
     canProceed: hasAddressConnected,
     proceedError: providerErrors.unauthorized({
@@ -90,7 +117,7 @@ export const checkAccountAndChainHaveBeenAuthorized = async (
   const accountResult = await checkAccountHasBeenAuthorized(req);
   if (!accountResult.canProceed) return accountResult;
 
-  const origin = new URL(req?.senderData?.url ?? "").origin;
+  const origin = getRequestOrigin(req?.senderData?.url);
   const connectedData = await StorageUtil.getDAppsConnectedAccountsData(origin);
   const activeChainId = normalizeChainId(
     (await StorageUtil.getActiveBlockChain())?.chainId,
@@ -393,7 +420,7 @@ export const checkWalletAddQrlChainParams = async (
 };
 
 export const checkUrlOriginHasBeenConnected = async (url: string) => {
-  const urlOrigin = new URL(url).origin;
+  const urlOrigin = getRequestOrigin(url);
   const connectedAccounts =
     (await StorageUtil.getDAppsConnectedAccountsData(urlOrigin))?.accounts ??
     [];
@@ -596,7 +623,17 @@ export const updateAccountsAndBlockchainsForUrlOrigin = async ({
   accounts: string[];
   blockchains: BlockchainDataType[];
 }) => {
-  const origin = new URL(urlOrigin ?? "").origin;
+  const origin = getRequestOrigin(urlOrigin);
+  if (!origin) {
+    // Never create a grant for an origin that cannot be identified — an opaque
+    // (`"null"`) origin is shared by every `file://` document and sandboxed frame,
+    // so the grant would not belong to anyone in particular. See CIPH-QRLW326-31.
+    console.warn(
+      "QrlWeb3Wallet: refusing to grant permissions to an unidentifiable origin",
+      { urlOrigin },
+    );
+    return [];
+  }
   // Do not silently force-switch the globally-active chain when granting
   // permissions. The user approved the connect, not a chain change. If the
   // dApp needs a different chain, it can call wallet_switchQRLChain — which

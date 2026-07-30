@@ -22,6 +22,7 @@ import {
   checkWalletSwitchQrlChainParams,
   checkWalletWatchAssetParams,
   updateAccountsAndBlockchainsForUrlOrigin,
+  getRequestOrigin,
 } from "../utils/restrictedMethodsMiddlewareUtils";
 import { DAppRequestType, DAppResponseType } from "./middlewareTypes";
 
@@ -368,7 +369,7 @@ export const restrictedMethodsMiddleware: JsonRpcMiddleware<
             }
             case RESTRICTED_METHODS.QRL_REQUEST_ACCOUNTS: {
               const accounts = await updateAccountsAndBlockchainsForUrlOrigin({
-                urlOrigin: new URL(req?.senderData?.url ?? "").origin,
+                urlOrigin: getRequestOrigin(req?.senderData?.url),
                 accounts: restrictedMethodResult?.response?.accounts,
                 blockchains: restrictedMethodResult?.response?.blockchains,
               });
@@ -376,7 +377,7 @@ export const restrictedMethodsMiddleware: JsonRpcMiddleware<
               break;
             }
             case RESTRICTED_METHODS.WALLET_REQUEST_PERMISSIONS: {
-              const urlOrigin = new URL(req?.senderData?.url ?? "").origin;
+              const urlOrigin = getRequestOrigin(req?.senderData?.url);
               await updateAccountsAndBlockchainsForUrlOrigin({
                 urlOrigin,
                 accounts: restrictedMethodResult?.response?.accounts,

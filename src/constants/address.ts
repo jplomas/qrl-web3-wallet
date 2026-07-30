@@ -6,17 +6,27 @@ export const QRL_ADDRESS_LENGTH = QRL_ADDRESS_PREFIX.length + QRL_ADDRESS_HEX_LE
 export const QRL_ZERO_ADDRESS =
   `${QRL_ADDRESS_PREFIX}${"0".repeat(QRL_ADDRESS_HEX_LENGTH)}` as const;
 
-const expandLegacyFixture = (suffix: string) =>
-  `${"0".repeat(96 - suffix.length)}${suffix}`.toLowerCase().padEnd(
-    QRL_ADDRESS_HEX_LENGTH,
-    "0",
-  );
-
+/**
+ * Example addresses for tests, fixtures and UI mocks.
+ *
+ * These are real canonical QRL addresses: `SHAKE-256(descriptor || pk, 64)` in
+ * checksummed form, derived from fixed seeds via `@theqrl/web3-qrl-accounts` and
+ * verified to pass `isAddressString`. All 128 hex characters carry entropy.
+ *
+ * They replace a previous `expandLegacyFixture` helper that embedded a 40-hex
+ * legacy address inside zero padding (`Q` + 56 zeros + core + 32 zeros). No such
+ * address can occur on chain, and the shape was actively misleading — it implied a
+ * 64-byte address is a legacy address in padding, when the two are unrelated
+ * values derived from the same key at different output lengths. It also meant no
+ * test exercised a realistic address: every fixture shared an identical head and
+ * tail, so nothing could catch a truncation or distinguishability bug.
+ * See CIPH-QRLW326-33.
+ */
 export const QRL_EXAMPLE_ADDRESS =
-  `${QRL_ADDRESS_PREFIX}${expandLegacyFixture("8A8eAFb1cf62BfBeb1741769DAE1a9dd47996192")}`;
+  "Q428d047198445023e32a2C714759c1e779c29D13073B476607013d9ECBF131B785237125693f9B634fFf922Ac3f5ED44A1bfD3090b4d378502c67fe9bde6E732";
 
 export const QRL_EXAMPLE_ADDRESS_2 =
-  `${QRL_ADDRESS_PREFIX}${expandLegacyFixture("fB08fF1f1376A14C055E9F56df80563E16722b")}`;
+  "Q9533D96156773207D75A5e71391C47486C43755D73d5aFB360C312322B2205B502aA01d6AE5dd224A26cC7EE2b7B294793746A0024C86c74173AB4cB5bD96D5d";
 
 export const QRL_EXAMPLE_ADDRESS_3 =
-  `${QRL_ADDRESS_PREFIX}${expandLegacyFixture("201BdF510d5aa66d1b5DB98dFB0f30D40b6Ea47D")}`;
+  "QC1217f83A8F17A4824F37DFd6215757c17071fDCc714871912Bd265150025adce6A94061EA217Ea4e716B9CC37618B5301Fda8cCe0Cdb999cb2bcD82C4e892e4";

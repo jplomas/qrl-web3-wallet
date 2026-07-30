@@ -26,7 +26,7 @@ export const LEDGER_CONFIG = {
     GET_APP_NAME: 0x04,
     /** Gets the public address for a given BIP-44 path */
     GET_PUBLIC_KEY: 0x05,
-    /** Signs a transaction using Dilithium key */
+    /** Signs a transaction using the ML-DSA-87 key */
     SIGN_TX: 0x06,
   },
 
@@ -129,9 +129,9 @@ export const LEDGER_CONFIG = {
   MAX_APDU_SIZE: 255,
 
   /**
-   * Dilithium signature parameters.
+   * ML-DSA-87 signature parameters.
    *
-   * Dilithium signature is ~2420 bytes (vs 65B for ECDSA in Ethereum).
+   * An ML-DSA-87 signature is 4627 bytes (vs 65B for ECDSA in Ethereum).
    * It doesn't fit in a single APDU response (max 255B).
    * We need to retrieve it in 18 chunks.
    */
@@ -143,7 +143,10 @@ export const LEDGER_CONFIG = {
    *
    * - Public key: ML-DSA-87 keys are exactly 2592 bytes; the device returns
    *   them as 10×258 + 1×12 chunks (`PK_CHUNKS = 11`).
-   * - Signature: ML-DSA-87 signatures are variable up to ~2420 bytes;
+   * - Signature: an ML-DSA-87 signature is 4627 bytes. NOTE: SIGNATURE_MAX_BYTES
+   *   below is 4096, which is *smaller* than that — see CIPH-QRLW326-32. The bound
+   *   is left unchanged pending verification against a real device or Speculos,
+   *   because raising it blindly could mask a genuine device-response fault;
    *   bound by an inclusive range to reject malformed reassemblies.
    */
   EXPECTED_PUBLIC_KEY_BYTES: 2592,

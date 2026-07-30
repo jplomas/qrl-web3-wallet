@@ -44,9 +44,7 @@ import {
   QRL_ADDRESS_LENGTH,
   QRL_ADDRESS_PREFIX,
 } from "@/constants/address";
-
-/** A pre-migration keystore label: `Q` + 40 hex characters (20 bytes). */
-const LEGACY_KEYSTORE_LABEL_REGEX = /^Q[0-9a-fA-F]{40}$/;
+import AddressUtil from "@/utilities/addressUtil";
 
 /** A canonical label: `Q` + 128 hex characters (64 bytes). */
 const CURRENT_KEYSTORE_LABEL_REGEX = /^Q[0-9a-fA-F]{128}$/;
@@ -64,7 +62,9 @@ export type KeystoreAddressMigration = {
  */
 export const isLegacyKeystoreLabel = (keyStore: unknown): boolean => {
   const label = (keyStore as KeyStore | undefined)?.address;
-  return typeof label === "string" && LEGACY_KEYSTORE_LABEL_REGEX.test(label);
+  return (
+    typeof label === "string" && AddressUtil.isLegacyQrlAddress(label)
+  );
 };
 
 type Argon2idKdfParams = {

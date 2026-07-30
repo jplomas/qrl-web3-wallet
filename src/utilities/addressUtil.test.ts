@@ -31,8 +31,11 @@ describe("addressUtil", () => {
   });
 
   it("normalizes only valid current QRL addresses", () => {
+    // The fixtures are already canonical checksummed addresses, so normalising
+    // one is the identity — asserting that is stronger than asserting a literal,
+    // because it cannot drift when the fixtures change. See CIPH-QRLW326-33.
     expect(AddressUtil.normalizeQrlAddress(` ${QRL_EXAMPLE_ADDRESS} `)).toBe(
-      "Q000000000000000000000000000000000000000000000000000000008a8eAfB1CF62bFbEb1741769DaE1A9dd4799619200000000000000000000000000000000",
+      QRL_EXAMPLE_ADDRESS,
     );
     expect(() => AddressUtil.normalizeQrlAddress("Q1234")).toThrow(
       "Expected 129-character QRL address",
@@ -41,13 +44,24 @@ describe("addressUtil", () => {
 
   it("converts current QRL addresses to SHAKE256 checksum form", () => {
     expect(AddressUtil.toChecksumQrlAddress(QRL_EXAMPLE_ADDRESS_2)).toBe(
-      "Q0000000000000000000000000000000000000000000000000000000000FB08Ff1F1376a14c055e9f56Df80563E16722b00000000000000000000000000000000",
+      QRL_EXAMPLE_ADDRESS_2,
     );
+    // Checksumming is case-recovering: an all-lowercase form must produce the
+    // canonical mixed-case one.
+    expect(
+      AddressUtil.toChecksumQrlAddress(QRL_EXAMPLE_ADDRESS_2.toLowerCase()),
+    ).toBe(QRL_EXAMPLE_ADDRESS_2);
   });
 
-  it("shortens long addresses for compact UI display", () => {
-    expect(AddressUtil.shortenQrlAddress(QRL_EXAMPLE_ADDRESS)).toBe(
-      "Q000000000...00000000",
-    );
+  it("identifies pre-64-byte legacy addresses", () => {
+    // Replaces the old `shortenQrlAddress` test, which asserted the all-zero
+    // string `"Q000000000...00000000"` — a value identical for every padded
+    // fixture, i.e. it was asserting a collision without noticing.
+    // See CIPH-QRLW326-34 and CIPH-QRLW326-33.
+    expect(
+      AddressUtil.isLegacyQrlAddress("Q20B714091cF2a62DADda2847803e3f1B9D2D3779"),
+    ).toBe(true);
+    expect(AddressUtil.isLegacyQrlAddress(QRL_EXAMPLE_ADDRESS)).toBe(false);
+    expect(AddressUtil.isLegacyQrlAddress("Q1234")).toBe(false);
   });
 });

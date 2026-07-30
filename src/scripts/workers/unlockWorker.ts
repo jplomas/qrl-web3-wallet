@@ -94,7 +94,11 @@ self.onmessage = async (event: MessageEvent<UnlockWorkerRequest>) => {
         if (!upgradedKeystores) {
           upgradedKeystores = [...keystores];
         }
-        const reEncrypted = await encrypt(seed, normalisedPassword);
+        const reEncrypted = await encrypt(
+          seed,
+          normalisedPassword,
+          RECOMMENDED_KEYSTORE_KDF_PARAMS,
+        );
         const idx = upgradedKeystores.findIndex(
           (k) =>
             k.address?.toLowerCase() === effectiveKeyStore.address?.toLowerCase(),
@@ -102,8 +106,6 @@ self.onmessage = async (event: MessageEvent<UnlockWorkerRequest>) => {
         if (idx >= 0) upgradedKeystores[idx] = reEncrypted;
       }
     }
-    // Reference the constant so tree-shaking does not drop the import.
-    void RECOMMENDED_KEYSTORE_KDF_PARAMS;
     self.postMessage({
       success: true,
       keys,

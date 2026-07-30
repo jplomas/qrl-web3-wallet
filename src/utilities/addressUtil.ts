@@ -28,13 +28,13 @@ class AddressUtil {
     }
     return toChecksumAddress(trimmed);
   }
-
-  static shortenQrlAddress(address: string, headLength = 10, tailLength = 8): string {
-    if (address.length <= headLength + tailLength) {
-      return address;
-    }
-    return `${address.slice(0, headLength)}...${address.slice(-tailLength)}`;
-  }
 }
+
+// `shortenQrlAddress` (first 10 + last 8 characters) was removed: it had no
+// production caller, and head/tail truncation in a confirmation surface is the
+// setup for address-poisoning. Every UI site uses `StringUtil.getSplitAddress`,
+// which renders the address in full. If a shortened form is wanted later, it
+// needs a test asserting two distinct real addresses do not render identically.
+// See CIPH-QRLW326-34.
 
 export default AddressUtil;

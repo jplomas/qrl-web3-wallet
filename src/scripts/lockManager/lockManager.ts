@@ -2,6 +2,7 @@ import StorageUtil, { LockState } from "@/utilities/storageUtil";
 import { Bytes, KeyStore } from "@theqrl/web3";
 import { decrypt, encrypt } from "@theqrl/web3-qrl-accounts";
 import { getMnemonicFromHexSeed } from "@/functions/getMnemonicFromHexSeed";
+import { RECOMMENDED_KEYSTORE_KDF_PARAMS } from "@/scripts/lockManager/keystoreParams";
 import {
   isLegacyKeystoreLabel,
   recoverKeystoreAddress,
@@ -333,7 +334,11 @@ class LockManager {
     const { password: rawPassword, seed } = accountData;
     const password = rawPassword.normalize("NFC");
     const keystores = await StorageUtil.getKeystores();
-    const encryptedKeyStore = await encrypt(seed, password);
+    const encryptedKeyStore = await encrypt(
+      seed,
+      password,
+      RECOMMENDED_KEYSTORE_KDF_PARAMS,
+    );
     const updatedKeyStores = [...keystores, encryptedKeyStore];
     await StorageUtil.setKeystores(
       Array.from(

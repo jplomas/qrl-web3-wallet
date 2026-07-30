@@ -1,3 +1,8 @@
+import {
+  QRL_EXAMPLE_ADDRESS,
+  QRL_EXAMPLE_ADDRESS_2,
+} from "@/constants/address";
+import StringUtil from "@/utilities/stringUtil";
 import { mockedStore } from "@/__mocks__/mockedStore";
 import { StoreProvider } from "@/stores/store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,6 +49,11 @@ const successSignResult = {
   gasLimit: 21000,
 };
 
+const expectedSplitAddress = (address: string) => {
+  const { prefix, addressSplit } = StringUtil.getSplitAddress(address);
+  return `${prefix} ${addressSplit.join(" ")}`;
+};
+
 describe("TokenTransfer", () => {
   afterEach(cleanup);
 
@@ -86,7 +96,7 @@ describe("TokenTransfer", () => {
       async () => {
         await userEvent.type(
           receiverAddressField,
-          "Q0000000000000000000000000000000000000000000000000000000020fb08ff1f1376a14c055e9f56df80563e16722b00000000000000000000000000000000",
+          QRL_EXAMPLE_ADDRESS_2.toLowerCase(),
         );
         await userEvent.type(amountField, "2.5");
       },
@@ -106,7 +116,7 @@ describe("TokenTransfer", () => {
     expect(screen.getByText("Account address")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Q 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 00000 08a8e AfB1C F62bF bEb17 41769 DaE1A 9dd47 99619 20000 00000 00000 00000 00000 00000 000",
+        expectedSplitAddress(QRL_EXAMPLE_ADDRESS),
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("Balance")).toBeInTheDocument();
@@ -143,7 +153,7 @@ describe("TokenTransfer", () => {
       async () => {
         await userEvent.type(
           receiverAddressField,
-          "Q0000000000000000000000000000000000000000000000000000000020fb08ff1f1376a14c055e9f56df80563e16722b00000000000000000000000000000000",
+          QRL_EXAMPLE_ADDRESS_2.toLowerCase(),
         );
         await userEvent.type(amountField, "2.5");
       },
@@ -193,7 +203,7 @@ describe("TokenTransfer", () => {
 
     await fillAndSubmitForm();
     expect(mockAddTransaction).toHaveBeenCalledWith(
-      "Q000000000000000000000000000000000000000000000000000000008a8eafb1cf62bfbeb1741769dae1a9dd4799619200000000000000000000000000000000",
+      QRL_EXAMPLE_ADDRESS,
       expect.objectContaining({
         pendingStatus: "pending",
         status: false,
@@ -240,7 +250,7 @@ describe("TokenTransfer", () => {
 
     await fillAndSubmitForm();
     expect(mockAddTransaction).toHaveBeenCalledWith(
-      "Q000000000000000000000000000000000000000000000000000000008a8eafb1cf62bfbeb1741769dae1a9dd4799619200000000000000000000000000000000",
+      QRL_EXAMPLE_ADDRESS,
       expect.objectContaining({
         transactionHash: "0xtxhash",
         pendingStatus: "pending",
@@ -265,7 +275,7 @@ describe("TokenTransfer", () => {
 
     await fillAndSubmitForm();
     expect(mockAddTransaction).toHaveBeenCalledWith(
-      "Q000000000000000000000000000000000000000000000000000000008a8eafb1cf62bfbeb1741769dae1a9dd4799619200000000000000000000000000000000",
+      QRL_EXAMPLE_ADDRESS,
       expect.objectContaining({
         transactionHash: "0xtxhash",
         pendingStatus: "pending",
@@ -354,7 +364,7 @@ describe("TokenTransfer", () => {
     await fillAndSubmitForm("Send TST");
     expect(mockSignZrc20Token).toHaveBeenCalled();
     expect(mockAddTransaction).toHaveBeenCalledWith(
-      "Q000000000000000000000000000000000000000000000000000000008a8eafb1cf62bfbeb1741769dae1a9dd4799619200000000000000000000000000000000",
+      QRL_EXAMPLE_ADDRESS,
       expect.objectContaining({
         pendingStatus: "pending",
         tokenSymbol: "TST",
@@ -492,7 +502,7 @@ describe("TokenTransfer", () => {
       async () => {
         await userEvent.type(
           receiverAddressField,
-          "Q0000000000000000000000000000000000000000000000000000000020fb08ff1f1376a14c055e9f56df80563e16722b00000000000000000000000000000000",
+          QRL_EXAMPLE_ADDRESS_2.toLowerCase(),
         );
         await userEvent.type(amountField, "10");
       },
@@ -532,7 +542,7 @@ describe("TokenTransfer", () => {
       async () => {
         await userEvent.type(
           receiverAddressField,
-          "Q0000000000000000000000000000000000000000000000000000000020fb08ff1f1376a14c055e9f56df80563e16722b00000000000000000000000000000000",
+          QRL_EXAMPLE_ADDRESS_2.toLowerCase(),
         );
         await userEvent.type(amountField, "5");
       },
@@ -586,7 +596,7 @@ describe("TokenTransfer", () => {
       async () => {
         await userEvent.type(
           receiverAddressField,
-          "Q0000000000000000000000000000000000000000000000000000000020fb08ff1f1376a14c055e9f56df80563e16722b00000000000000000000000000000000",
+          QRL_EXAMPLE_ADDRESS_2.toLowerCase(),
         );
         await userEvent.type(amountField, "100");
       },
@@ -637,7 +647,7 @@ describe("TokenTransfer", () => {
       async () => {
         await userEvent.type(
           receiverAddressField,
-          "Q0000000000000000000000000000000000000000000000000000000020fb08ff1f1376a14c055e9f56df80563e16722b00000000000000000000000000000000",
+          QRL_EXAMPLE_ADDRESS_2.toLowerCase(),
         );
         await userEvent.type(amountField, "10");
       },

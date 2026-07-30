@@ -137,7 +137,11 @@ class QrlStore {
       accountAddress: activeAccount ?? "",
     };
 
-    let storedAccountList: string[] = [];
+    // The write is conditional on having actually read the list. It used to live
+    // in a `finally`, so a transient storage failure persisted the empty initial
+    // value over the real accounts — presenting as total data loss and orphaning
+    // every dataset keyed by those addresses. See CIPH-QRLW326-25.
+    let storedAccountList: string[] | undefined;
     try {
       const accountListFromStorage = await StorageUtil.getAllAccounts();
       storedAccountList = [...accountListFromStorage];
@@ -145,8 +149,8 @@ class QrlStore {
         storedAccountList.push(activeAccount);
       }
       storedAccountList = [...new Set(storedAccountList)];
-    } finally {
       await StorageUtil.setAllAccounts(storedAccountList);
+    } finally {
       await this.fetchAccounts();
     }
   }

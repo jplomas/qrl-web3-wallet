@@ -12,7 +12,17 @@ const PHISHING_CACHE_KEY = "PHISHING_BLOCKLIST_CACHE";
 const PHISHING_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 export const PHISHING_ALARM_NAME = "QRL_PHISHING_REFRESH";
 
-export type PhishingDetectorStatus = "ready" | "initializing" | "unavailable";
+export type PhishingDetectorStatus =
+  | "ready"
+  /**
+   * Matching against the build-time bundled snapshot because the remote list
+   * could not be fetched and no cache was available. The list is very likely out
+   * of date, so the UI must say so — reporting plain "ready" here told the user
+   * they had current protection when they did not. See CIPH-QRLW326-27.
+   */
+  | "stale-fallback"
+  | "initializing"
+  | "unavailable";
 
 export type PhishingCheckResult = {
   isDomainPhishing: boolean;
@@ -126,7 +136,9 @@ export async function initializePhishingDetector(): Promise<void> {
   // bundled snapshot so a baseline blocklist is always available, then
   // schedule a retry to refresh against the live upstream.
   detectorInstance = createDetector(bundledPhishingConfig as PhishingConfig);
-  detectorStatus = "ready";
+  // Not "ready": this is the build-time snapshot, not the live list.
+  // See CIPH-QRLW326-27.
+  detectorStatus = "stale-fallback";
   scheduleRetry();
 }
 

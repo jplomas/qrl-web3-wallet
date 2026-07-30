@@ -10,6 +10,7 @@
 
 import { decrypt, encrypt } from "@theqrl/web3-qrl-accounts";
 import { getMnemonicFromHexSeed } from "@/functions/getMnemonicFromHexSeed";
+import { RECOMMENDED_KEYSTORE_KDF_PARAMS } from "@/scripts/lockManager/keystoreParams";
 import type { KeyStore } from "@theqrl/web3";
 
 export type ChangePasswordWorkerRequest = {
@@ -42,7 +43,11 @@ self.onmessage = async (
 
     for (const keyStore of keystores) {
       const { address, seed } = await decrypt(keyStore, normalisedOld);
-      const reEncrypted = await encrypt(seed, normalisedNew);
+      const reEncrypted = await encrypt(
+        seed,
+        normalisedNew,
+        RECOMMENDED_KEYSTORE_KDF_PARAMS,
+      );
       newKeystores.push(reEncrypted);
       newKeys.push({
         address,

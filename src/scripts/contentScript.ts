@@ -266,25 +266,6 @@ const prepareListeners = () => {
       } else if (method === UNRESTRICTED_METHODS.NET_VERSION) {
         const networkId = await qrl.net.getId();
         return "0x".concat(networkId.toString(16));
-      } else if (method === UNRESTRICTED_METHODS.QRL_ACCOUNTS) {
-        const connectedAccountsData =
-          await StorageUtil.getDAppsConnectedAccountsData(
-            new URL(message?.data?.senderData?.url ?? "").origin,
-          );
-        return connectedAccountsData?.accounts ?? [];
-      } else if (method === UNRESTRICTED_METHODS.WALLET_GET_PERMISSIONS) {
-        const dAppsConnectedAccountsData =
-          await StorageUtil.getDAppsConnectedAccountsData(
-            new URL(message?.data?.senderData?.url ?? "").origin,
-          );
-        return getSerializableObject(
-          dAppsConnectedAccountsData?.permissions ?? [],
-        );
-      } else if (method === UNRESTRICTED_METHODS.WALLET_REVOKE_PERMISSIONS) {
-        await StorageUtil.clearDAppsConnectedAccountsData(
-          new URL(message?.data?.senderData?.url ?? "").origin,
-        );
-        return null;
       } else if (method === UNRESTRICTED_METHODS.WEB_3_CLIENT_VERSION) {
         const currentVersion = await qrl?.getNodeInfo();
         return currentVersion;

@@ -1,7 +1,11 @@
 import { BlockchainDataType } from "@/configuration/qrlBlockchainConfig";
 import { AdditionalJsonRpcRequestKeys } from "@theqrl/qrl-wallet-provider/utils";
 
-export type PhishingDetectorStatus = "ready" | "initializing" | "unavailable";
+// Re-exported from the detector rather than redeclared. The two definitions had
+// already drifted apart, which is how a new status value became a type error
+// instead of just working. See CIPH-QRLW326-27.
+export type { PhishingDetectorStatus } from "@/scripts/phishing/phishingDetector";
+import type { PhishingDetectorStatus } from "@/scripts/phishing/phishingDetector";
 
 export type PhishingCheckResult = {
   isDomainPhishing: boolean;
