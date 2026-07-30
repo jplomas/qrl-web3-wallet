@@ -1,7 +1,16 @@
 import StorageUtil, { LockState } from "@/utilities/storageUtil";
-import { Bytes } from "@theqrl/web3";
+import { Bytes, KeyStore } from "@theqrl/web3";
 import { decrypt, encrypt } from "@theqrl/web3-qrl-accounts";
 import { getMnemonicFromHexSeed } from "@/functions/getMnemonicFromHexSeed";
+import {
+  isLegacyKeystoreLabel,
+  recoverKeystoreAddress,
+  relabelKeystore,
+} from "@/scripts/lockManager/keystoreAddressMigration";
+import {
+  migrateStoredAddresses,
+  type StoredAddressRemap,
+} from "@/utilities/storedAddressMigration";
 import browser from "webextension-polyfill";
 
 type MessageType = {
@@ -29,6 +38,14 @@ export type SetDecryptedKeysPayload = {
   keys: DecryptedKeyType[];
   walletPassword: string;
 };
+
+/**
+ * Messages that are emitted by the extension itself rather than by a user
+ * action, and so must not be treated as activity for auto-lock purposes.
+ */
+const MACHINE_GENERATED_MESSAGES: ReadonlySet<string> = new Set([
+  "LOCK_MANAGER_IS_LOCKED",
+]);
 
 export const LOCK_MANAGER_MESSAGES = {
   PORT: "LOCK_MANGER_PORT",
@@ -65,9 +82,16 @@ class LockManager {
   static async lock() {
     this.clearDecryptedKeys();
     this.walletPassword = undefined;
-    await this.clearSessionKeys();
-    await this.stopKeepAlive();
-    await this.clearAutoLockAlarm();
+    try {
+      await this.clearSessionKeys();
+    } finally {
+      // The alarms must be cleared even if removing the session backup fails.
+      // Previously a rejection here left the keep-alive running, and its next
+      // tick restored the keys from the backup that was never removed — the
+      // wallet silently unlocked itself. See CIPH-QRLW326-16.
+      await this.stopKeepAlive();
+      await this.clearAutoLockAlarm();
+    }
   }
 
   static async startKeepAlive() {
@@ -111,8 +135,14 @@ class LockManager {
   }
 
   static async handleAutoLockAlarm() {
-    await this.lock();
+    // Record the LOCKED transition *before* clearing state. `lock()`'s first
+    // storage write raises `storage.onChanged` in any open extension page, whose
+    // recovery path decides "intentional lock vs service-worker restart" by
+    // comparing these timestamps. Writing the marker afterwards meant the page
+    // read a stale value, concluded the worker had restarted, and re-sent the
+    // keys and password — undoing the auto-lock. See CIPH-QRLW326-17.
     await StorageUtil.updateLockStateTimeStamp(LockState.LOCKED);
+    await this.lock();
   }
 
   /**
@@ -137,6 +167,23 @@ class LockManager {
    */
   static async restoreKeysFromSession(): Promise<boolean> {
     try {
+      // A backup only authorises a restore if the last recorded transition was an
+      // unlock. Without this check any stale backup — one left behind by a lock
+      // whose session clear was interrupted — silently unlocked the wallet with
+      // no password, on the next IS_LOCKED query or keep-alive tick. The popup's
+      // equivalent recovery path has always applied this test; the service worker
+      // did not. See CIPH-QRLW326-16.
+      const [lockedAt, unlockedAt] = await Promise.all([
+        StorageUtil.getLockStateTimeStamp(LockState.LOCKED),
+        StorageUtil.getLockStateTimeStamp(LockState.UNLOCKED),
+      ]);
+      if (lockedAt > unlockedAt) {
+        // The wallet was deliberately locked. Discard the backup rather than
+        // leaving it to authorise a later restore.
+        await this.clearSessionKeys();
+        return false;
+      }
+
       const data = await browser.storage.session.get(this.SESSION_KEYS_KEY);
       const keys = data?.[this.SESSION_KEYS_KEY] as
         | DecryptedKeyType[]
@@ -165,19 +212,63 @@ class LockManager {
       const keyStores = await StorageUtil.getKeystores();
       if (!keyStores.length) return false;
       const decryptedKeys: DecryptedKeyType[] = [];
+      let migratedKeystores: KeyStore[] | undefined;
+      const addressRemaps: StoredAddressRemap[] = [];
       for (const keyStore of keyStores) {
         // Yield the event loop between decryptions so Chrome
         // doesn't consider the service worker unresponsive.
         await new Promise((r) => setTimeout(r, 0));
-        const { address, seed } = await decrypt(keyStore, normalisedPassword);
+        // Repair a stale pre-64-byte address label before decrypting; the
+        // current library rejects the keystore outright otherwise. See
+        // keystoreAddressMigration.ts.
+        let effectiveKeyStore = keyStore;
+        if (isLegacyKeystoreLabel(keyStore)) {
+          const recovered = await recoverKeystoreAddress(
+            keyStore,
+            normalisedPassword,
+          );
+          if (recovered) {
+            effectiveKeyStore = relabelKeystore(keyStore, recovered.address);
+            addressRemaps.push({
+              from: String(keyStore.address),
+              to: recovered.address,
+            });
+            if (!migratedKeystores) migratedKeystores = [...keyStores];
+            const idx = migratedKeystores.findIndex(
+              (k) => k.address === keyStore.address,
+            );
+            if (idx >= 0) migratedKeystores[idx] = effectiveKeyStore;
+          }
+        }
+        const { address, seed } = await decrypt(
+          effectiveKeyStore,
+          normalisedPassword,
+        );
         decryptedKeys.push({
           address,
           seed,
           mnemonicPhrases: getMnemonicFromHexSeed(seed),
         });
       }
+      if (migratedKeystores) {
+        try {
+          // Order matters: repoint the data that references the old addresses
+          // before the keystores stop advertising them, so an interrupted
+          // migration leaves the labels stale and retryable rather than leaving
+          // orphaned data behind a completed relabel.
+          await migrateStoredAddresses(addressRemaps);
+          await StorageUtil.setKeystores(migratedKeystores);
+        } catch (error) {
+          // Non-fatal: the unlock itself succeeded. Both steps are idempotent and
+          // will be retried on the next unlock.
+          console.warn(
+            "QrlWeb3Wallet: failed to complete stored address migration",
+            error,
+          );
+        }
+      }
       this.walletPassword = normalisedPassword;
-      this.setDecryptedKeys(
+      await this.setDecryptedKeys(
         Array.from(
           new Map(
             decryptedKeys.map((item) => [item.address.toLowerCase(), item]),
@@ -222,14 +313,14 @@ class LockManager {
    * array (the latter for SW-restart re-sends, where the popup may have
    * lost the password but still has cached keys).
    */
-  static setDecryptedKeysFromPopup(
+  static async setDecryptedKeysFromPopup(
     payload: SetDecryptedKeysPayload | DecryptedKeyType[],
   ) {
     const keys = Array.isArray(payload) ? payload : payload.keys;
     if (!Array.isArray(payload) && payload.walletPassword) {
       this.walletPassword = payload.walletPassword;
     }
-    this.setDecryptedKeys(
+    await this.setDecryptedKeys(
       Array.from(
         new Map(
           keys.map((item) => [item.address.toLowerCase(), item]),
@@ -260,7 +351,7 @@ class LockManager {
     };
     this.walletPassword = password;
     const existingKeys = this.decryptedKeys ?? [];
-    this.setDecryptedKeys(
+    await this.setDecryptedKeys(
       Array.from(
         new Map(
           [...existingKeys, newKey].map((item) => [
@@ -272,9 +363,19 @@ class LockManager {
     );
   }
 
-  private static setDecryptedKeys(decryptedKeys: DecryptedKeyType[]) {
+  private static async setDecryptedKeys(decryptedKeys: DecryptedKeyType[]) {
     this.decryptedKeys = decryptedKeys;
-    this.backupKeysToSession();
+    // Awaited: as a floating promise, a `lock()` interleaving between the write
+    // being issued and completing left the decrypted seeds in session storage
+    // after the manager had reported itself locked. See CIPH-QRLW326-16.
+    try {
+      await this.backupKeysToSession();
+    } catch (error) {
+      console.warn(
+        "QrlWeb3Wallet: failed to back up decrypted keys to session storage",
+        error,
+      );
+    }
   }
 
   static getWalletPassword() {
@@ -320,7 +421,7 @@ class LockManager {
       result = await LockManager.isLocked();
     } else if (message.name === LOCK_MANAGER_MESSAGES.SET_DECRYPTED_KEYS) {
       // The popup decrypted the keystores locally and is sending us the results.
-      LockManager.setDecryptedKeysFromPopup(message?.data ?? []);
+      await LockManager.setDecryptedKeysFromPopup(message?.data ?? []);
       await LockManager.startKeepAlive();
       await LockManager.setupAutoLockAlarm();
       result = { success: true };
@@ -337,8 +438,17 @@ class LockManager {
       result = await LockManager.encryptAccount(message?.data ?? {});
     }
 
-    // Any message while wallet is unlocked resets the auto-lock timer.
-    if (LockManager.decryptedKeys !== undefined) {
+    // User activity while unlocked resets the auto-lock timer.
+    //
+    // "Activity" must mean *user* activity. IS_LOCKED is machine-generated: the
+    // service worker's own keep-alive writes session storage every ~24 s, every
+    // open extension page answers that storage event with an IS_LOCKED query, and
+    // treating those as activity re-armed the alarm forever — so the configured
+    // auto-lock never fired in side-panel or tab mode. See CIPH-QRLW326-3.
+    if (
+      LockManager.decryptedKeys !== undefined &&
+      !MACHINE_GENERATED_MESSAGES.has(message.name)
+    ) {
       await LockManager.setupAutoLockAlarm();
     }
 

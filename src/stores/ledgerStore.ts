@@ -31,6 +31,7 @@ import { ledgerService } from "@/services/ledger/ledgerService";
 import { ledgerTransport } from "@/services/ledger/ledgerTransport";
 import type { LedgerAccount, LedgerDeviceInfo } from "@/services/ledger/ledgerTypes";
 import StorageUtil from "@/utilities/storageUtil";
+import { assertSignedTransactionSender } from "@/utilities/signedTransactionGuard";
 import { LEDGER_ERROR_MESSAGES } from "@/constants/ledger";
 import { getDerivationPath } from "@/services/ledger/ledgerApdu";
 import { FeeMarketEIP1559Transaction } from "@theqrl/web3-qrl-accounts";
@@ -608,7 +609,13 @@ class LedgerStore {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const signedTx = FeeMarketEIP1559Transaction.fromValuesArray(signedTxValues as any, { common });
     const signedRawTx = signedTx.serialize();
-    return "0x" + Buffer.from(signedRawTx).toString("hex");
+    const rawTransaction = "0x" + Buffer.from(signedRawTx).toString("hex");
+    // The software signing path has always verified this; the Ledger path did
+    // not. Without it a stale stored address broadcasts successfully while the
+    // wallet records the transaction against an account that is not the on-chain
+    // sender. See CIPH-QRLW326-26.
+    assertSignedTransactionSender(rawTransaction, fromAddress);
+    return rawTransaction;
   }
 
   clearSigningState(): void {

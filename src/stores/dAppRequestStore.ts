@@ -24,6 +24,16 @@ class DAppRequestStore {
   canProceed: boolean = false;
   onPermissionCallBack: (hasApproved: boolean) => Promise<void> = async () =>
     undefined;
+  /**
+   * The `requestId` that `onPermissionCallBack` was registered for.
+   *
+   * The callback is a closure over the request that was on screen when its
+   * approval component rendered, so it must never be invoked for a different
+   * request. Without this binding a handler registered for one request — e.g. a
+   * transaction that has since timed out — stays installed and is executed by
+   * the user's approval of whatever request replaced it.
+   */
+  onPermissionCallBackRequestId?: string;
   approvalProcessingStatus = {
     isProcessing: false,
     hasApproved: false,
@@ -38,6 +48,7 @@ class DAppRequestStore {
       addToResponseData: action.bound,
       setCanProceed: action.bound,
       setOnPermissionCallBack: action.bound,
+      clearOnPermissionCallBack: action.bound,
       onPermission: action.bound,
       approvalProcessingStatus: observable.struct,
       fetchCurrentTabData: action.bound,
@@ -61,6 +72,11 @@ class DAppRequestStore {
             hasApproved: false,
             hasCompleted: false,
           };
+          // The pending request has changed, so the handler registered for the
+          // previous one is stale. Drop it: the incoming request's approval
+          // component installs its own, and until it does there is nothing to
+          // run.
+          this.clearOnPermissionCallBack();
           void this.readDAppRequestData();
         }
       });
@@ -110,6 +126,43 @@ class DAppRequestStore {
     this.dAppRequestData = storedDAppRequestData;
   }
 
+  /**
+   * The origin that actually made the pending request, taken from the
+   * service-worker-stamped `senderData`.
+   *
+   * Approval screens must use this rather than `currentTabData`. The latter is
+   * the *active tab*, which for a request from a cross-origin iframe or a
+   * background tab is a different origin entirely — so seeding a permission
+   * prompt from it offered the attacker's origin the victim dApp's own account
+   * set, pre-selected. See CIPH-QRLW326-6.
+   */
+  get requestingOrigin(): string {
+    const url = this.dAppRequestData?.requestData?.senderData?.url ?? "";
+    try {
+      return new URL(url).origin;
+    } catch {
+      return "";
+    }
+  }
+
+  /**
+   * The accounts and chains already granted to the *requesting* origin. Empty for
+   * an origin the user has not connected before, which is the point: the user
+   * must then make an explicit selection rather than confirming a pre-ticked one.
+   */
+  async getRequestingOriginGrants(): Promise<{
+    accounts: string[];
+    blockchains: BlockchainDataType[];
+  }> {
+    const origin = this.requestingOrigin;
+    if (!origin) return { accounts: [], blockchains: [] };
+    const data = await StorageUtil.getDAppsConnectedAccountsData(origin);
+    return {
+      accounts: data?.accounts ?? [],
+      blockchains: data?.blockchains ?? [],
+    };
+  }
+
   addToResponseData(data: Record<string, unknown>) {
     const serializableData = getSerializableObject(data);
     this.responseData = { ...this.responseData, ...serializableData };
@@ -121,6 +174,16 @@ class DAppRequestStore {
 
   setOnPermissionCallBack(callBack: (hasApproved: boolean) => Promise<void>) {
     this.onPermissionCallBack = callBack;
+    // Bind the handler to the request that is on screen as it registers. Every
+    // approval component registers from a render (or a click) in which
+    // `dAppRequestData` is the request its closure captured, so this is the
+    // request the handler is safe to act on — and only that one.
+    this.onPermissionCallBackRequestId = this.dAppRequestData?.requestId;
+  }
+
+  clearOnPermissionCallBack() {
+    this.onPermissionCallBack = async () => undefined;
+    this.onPermissionCallBackRequestId = undefined;
   }
 
   async setApprovalProcessingStatus(status: {
@@ -135,17 +198,37 @@ class DAppRequestStore {
   }
 
   async onPermission(hasApproved: boolean) {
+    const requestId = this.dAppRequestData?.requestId;
+    // Only ever run a handler that was registered for the request currently on
+    // screen. A mismatch means the pending request changed after the handler was
+    // installed, so approving it would execute an action the user is not looking
+    // at. Fail closed: report a rejection rather than running the wrong effect.
+    const handlerMatchesRequest =
+      this.onPermissionCallBackRequestId !== undefined &&
+      this.onPermissionCallBackRequestId === requestId;
+    const effectiveApproval = hasApproved && handlerMatchesRequest;
+
     try {
       this.setApprovalProcessingStatus({
         isProcessing: true,
-        hasApproved,
+        hasApproved: effectiveApproval,
       });
-      await this.onPermissionCallBack(hasApproved);
+      if (handlerMatchesRequest) {
+        await this.onPermissionCallBack(hasApproved);
+      } else if (hasApproved) {
+        console.warn(
+          "QrlWeb3Wallet: refusing to run an approval handler registered for a different request",
+          {
+            registeredFor: this.onPermissionCallBackRequestId,
+            currentRequest: requestId,
+          },
+        );
+      }
       const response: DAppResponseType = {
         method: this.dAppRequestData?.method ?? "",
         action: EXTENSION_MESSAGES.DAPP_RESPONSE,
-        hasApproved,
-        requestId: this.dAppRequestData?.requestId,
+        hasApproved: effectiveApproval,
+        requestId,
         response: this.responseData,
       };
       await browser.runtime.sendMessage(response);

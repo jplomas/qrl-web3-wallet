@@ -4,13 +4,18 @@ import "@testing-library/jest-dom/vitest";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as Record<string, any>).IS_REACT_ACT_ENVIRONMENT = true;
 
-Object.defineProperty(window, "matchMedia", {
-  value: vi.fn().mockImplementation((query) => ({
-    matches: true,
-    query,
-  })),
-});
+// Guarded so that test files opting into the `node` environment via
+// `// @vitest-environment node` — e.g. real-cryptography tests, which cannot use
+// jsdom's own `Uint8Array` — still load this shared setup.
+if (typeof window !== "undefined") {
+  Object.defineProperty(window, "matchMedia", {
+    value: vi.fn().mockImplementation((query) => ({
+      matches: true,
+      query,
+    })),
+  });
 
-Object.defineProperty(window, "scrollTo", {
-  value: vi.fn().mockImplementation((x, y) => ({ x, y })),
-});
+  Object.defineProperty(window, "scrollTo", {
+    value: vi.fn().mockImplementation((x, y) => ({ x, y })),
+  });
+}

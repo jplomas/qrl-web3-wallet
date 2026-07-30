@@ -31,7 +31,14 @@ export type BlockchainAdditionalDataType = {
   defaultBlockExplorerUrl: string;
   defaultIconUrl: string;
   isTestnet: boolean;
-  defaultWsRpcUrl: string;
+  /**
+   * Optional WebSocket/subscription RPC endpoint. Optional because there is no
+   * sensible default: it used to be hardcoded to a loopback address for every
+   * chain, so subscriptions never reached the chain in use and any page could
+   * drive POSTs to a fixed local port. Absent means subscriptions are
+   * unsupported for that chain. See CIPH-QRLW326-20.
+   */
+  defaultWsRpcUrl?: string;
   isCustomChain: boolean;
   qrnsRegistryAddress?: string;
 };
@@ -46,7 +53,6 @@ export const QRL_BLOCKCHAINS: BlockchainDataType[] = [
     defaultBlockExplorerUrl: QRL_MAINNET_DATA.blockExplorerUrls[0],
     defaultIconUrl: QRL_MAINNET_DATA.iconUrls[0],
     isTestnet: false,
-    defaultWsRpcUrl: "http://localhost:3000",
     isCustomChain: false,
   },
   {
@@ -55,7 +61,6 @@ export const QRL_BLOCKCHAINS: BlockchainDataType[] = [
     defaultBlockExplorerUrl: QRL_TESTNET_DATA.blockExplorerUrls[0],
     defaultIconUrl: QRL_TESTNET_DATA.iconUrls[0],
     isTestnet: true,
-    defaultWsRpcUrl: "http://localhost:3000",
     isCustomChain: false,
   },
 ];

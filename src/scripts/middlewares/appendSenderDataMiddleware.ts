@@ -13,6 +13,12 @@ type appendSenderDataParams = {
 // hosting a connected dApp's iframe is caught.
 export type ExtendedSenderData = {
   tabId?: number;
+  /**
+   * The frame within the tab that issued the request. Required so a reply can be
+   * delivered to that frame alone — `tabs.sendMessage` without it broadcasts to
+   * every frame, which turns one provider call into N. See CIPH-QRLW326-21.
+   */
+  frameId?: number;
   title?: string;
   url?: string;
   favIconUrl?: string;
@@ -34,6 +40,7 @@ export const appendSenderDataMiddleware =
     // and for popup display so users see both frame and parent origins.
     const senderData: ExtendedSenderData = {
       tabId: tab?.id,
+      frameId: sender.frameId,
       title: tab?.title,
       url: senderUrl,
       favIconUrl: tab?.favIconUrl,

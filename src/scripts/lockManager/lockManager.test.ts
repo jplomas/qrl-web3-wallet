@@ -81,7 +81,6 @@ const clearStore = (store: Record<string, any>) => {
 
 const MOCK_KEYS: DecryptedKeyType[] = [
   {
-    password: "test123",
     address: "Q0000000000000000000000000000000000000000000000000000000020B714091cF2a62DADda2847803e3f1B9D2D377900000000000000000000000000000000",
     seed: "0x010000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     mnemonicPhrases: "mocked mnemonic",
@@ -144,6 +143,78 @@ describe("LockManager – keep-alive & auto-lock", () => {
   });
 
   // ── Session key backup / restore ───────────────────────────────
+
+  describe("auto-lock and session-backup safety", () => {
+    it("records the LOCKED transition before clearing state", async () => {
+      // CIPH-QRLW326-17. `lock()`'s first storage write raises onChanged in any
+      // open page, whose recovery path compares these timestamps to tell an
+      // intentional lock from a service-worker restart. Writing the marker after
+      // clearing meant the page read a stale value, assumed a restart, and
+      // re-sent the keys and password — undoing the auto-lock.
+      localStore["SETTINGS"] = { autoLockMinutes: 5 };
+      sessionStore["_LM_CACHED_KEYS"] = MOCK_KEYS;
+      const writeOrder: string[] = [];
+      const setSpy = vi
+        .spyOn(browser.storage.local, "set")
+        .mockImplementation((data: any) => {
+          if ("LOCK_MANAGER_LOCKED_TIMESTAMP" in data) writeOrder.push("marker");
+          Object.assign(localStore, data);
+          return Promise.resolve();
+        });
+      const removeSpy = vi
+        .spyOn(browser.storage.session, "remove")
+        .mockImplementation((key: any) => {
+          writeOrder.push("clear-session");
+          delete sessionStore[key];
+          return Promise.resolve();
+        });
+
+      await LockManager.handleAutoLockAlarm();
+
+      expect(writeOrder).toEqual(["marker", "clear-session"]);
+      setSpy.mockRestore();
+      removeSpy.mockRestore();
+    });
+
+    it("clears the alarms even when removing the session backup fails", async () => {
+      // CIPH-QRLW326-16. A rejection here used to leave the keep-alive running,
+      // and its next tick restored the keys from the backup that was never
+      // removed — the wallet silently unlocked itself.
+      const removeSpy = vi
+        .spyOn(browser.storage.session, "remove")
+        .mockRejectedValue(new Error("storage unavailable"));
+      mockAlarms.clear.mockClear();
+
+      await expect(LockManager.lock()).rejects.toThrow("storage unavailable");
+
+      expect(mockAlarms.clear).toHaveBeenCalledWith(LockManager.KEEP_ALIVE_ALARM);
+      expect(mockAlarms.clear).toHaveBeenCalledWith(LockManager.AUTO_LOCK_ALARM);
+      removeSpy.mockRestore();
+    });
+
+    it("refuses to restore a backup left behind by an intentional lock", async () => {
+      // CIPH-QRLW326-16. Any stale backup used to unlock the wallet with no
+      // password on the next IS_LOCKED query or keep-alive tick.
+      sessionStore["_LM_CACHED_KEYS"] = MOCK_KEYS;
+      localStore["LOCK_MANAGER_UNLOCKED_TIMESTAMP"] = 1_000;
+      localStore["LOCK_MANAGER_LOCKED_TIMESTAMP"] = 2_000;
+
+      await expect(LockManager.restoreKeysFromSession()).resolves.toBe(false);
+      // The stale backup is discarded rather than left to authorise a later restore.
+      expect(sessionStore["_LM_CACHED_KEYS"]).toBeUndefined();
+    });
+
+    it("still restores after a genuine service-worker restart", async () => {
+      sessionStore["_LM_CACHED_KEYS"] = MOCK_KEYS;
+      localStore["LOCK_MANAGER_LOCKED_TIMESTAMP"] = 1_000;
+      localStore["LOCK_MANAGER_UNLOCKED_TIMESTAMP"] = 2_000;
+
+      await expect(LockManager.restoreKeysFromSession()).resolves.toBe(true);
+      expect(sessionStore["_LM_CACHED_KEYS"]).toEqual(MOCK_KEYS);
+
+      await LockManager.lock();
+    });
+  });
 
   describe("session key backup", () => {
     it("should backup keys to session storage when keys are set", () => {
@@ -296,12 +367,37 @@ describe("LockManager – keep-alive & auto-lock", () => {
       });
     });
 
-    it("should reset auto-lock timer on any message while unlocked", async () => {
+    it("should reset auto-lock timer on a user-driven message while unlocked", async () => {
       localStore["SETTINGS"] = { autoLockMinutes: 5 };
       localStore["KEYSTORES"] = JSON.stringify([{ address: "0x123" }]);
       localStore["ACCOUNTS"] = { ALL_ACCOUNTS: ["0x123"] };
 
-      LockManager.setDecryptedKeysFromPopup(MOCK_KEYS);
+      await LockManager.setDecryptedKeysFromPopup(MOCK_KEYS);
+      mockAlarms.create.mockClear();
+
+      await LockManager.lockManagerListener({
+        name: LOCK_MANAGER_MESSAGES.GET_DECRYPTED_KEYS,
+        data: undefined,
+      });
+
+      expect(mockAlarms.create).toHaveBeenCalledWith(LockManager.AUTO_LOCK_ALARM, {
+        delayInMinutes: 5,
+      });
+
+      await LockManager.lock();
+    });
+
+    it("should NOT reset auto-lock timer on the machine-generated IS_LOCKED query", async () => {
+      // CIPH-QRLW326-3. The service worker's own keep-alive writes session
+      // storage every ~24 s; every open extension page answers that storage event
+      // with IS_LOCKED. Counting those as user activity re-armed the alarm
+      // forever, so the configured auto-lock never fired in side-panel or tab
+      // mode. This test previously asserted the opposite.
+      localStore["SETTINGS"] = { autoLockMinutes: 5 };
+      localStore["KEYSTORES"] = JSON.stringify([{ address: "0x123" }]);
+      localStore["ACCOUNTS"] = { ALL_ACCOUNTS: ["0x123"] };
+
+      await LockManager.setDecryptedKeysFromPopup(MOCK_KEYS);
       mockAlarms.create.mockClear();
 
       await LockManager.lockManagerListener({
@@ -309,9 +405,10 @@ describe("LockManager – keep-alive & auto-lock", () => {
         data: undefined,
       });
 
-      expect(mockAlarms.create).toHaveBeenCalledWith(LockManager.AUTO_LOCK_ALARM, {
-        delayInMinutes: 5,
-      });
+      expect(mockAlarms.create).not.toHaveBeenCalledWith(
+        LockManager.AUTO_LOCK_ALARM,
+        expect.anything(),
+      );
 
       await LockManager.lock();
     });

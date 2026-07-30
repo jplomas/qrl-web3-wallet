@@ -176,7 +176,16 @@ const NFTTransfer = observer(() => {
   async function onSubmit(formData: z.infer<typeof FormSchema>) {
     try {
       let receiver = formData.receiverAddress;
+      // The schema only validated the *name*, so the substituted address must be
+      // checked here too — this is the value that becomes the transaction
+      // recipient. See CIPH-QRLW326-4.
       if (isQrnsName(receiver) && resolvedAddress) {
+        if (!AddressUtil.isQrlAddress(resolvedAddress.trim())) {
+          control.setError("receiverAddress", {
+            message: t("validation.addressInvalid"),
+          });
+          return;
+        }
         receiver = resolvedAddress;
       }
 
@@ -288,8 +297,14 @@ const NFTTransfer = observer(() => {
 
   const watchedReceiver = watch("receiverAddress");
   const resolveTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  /** Monotonic id of the newest resolution; older ones must not write state. */
+  const resolveRequestIdRef = useRef(0);
   useEffect(() => {
     clearTimeout(resolveTimerRef.current);
+    // Invalidate any in-flight resolution on every run, before the branch below,
+    // so replacing a name with a literal address also cancels it.
+    const requestId = ++resolveRequestIdRef.current;
+    const isCurrent = () => resolveRequestIdRef.current === requestId;
 
     if (!watchedReceiver || !isQrnsName(watchedReceiver)) {
       setResolvedAddress(null);
@@ -306,17 +321,26 @@ const NFTTransfer = observer(() => {
     const registry = qrlStore.qrlConnection.blockchain.qrnsRegistryAddress;
     const nameToResolve = watchedReceiver.trim();
 
+    // The debounce cleanup cancels a pending timer but not an in-flight network
+    // call, so a slow resolution for a previously typed name could otherwise land
+    // after the user had edited the field and be used as the recipient.
+    // See CIPH-QRLW326-18.
     resolveTimerRef.current = setTimeout(() => {
       resolveQrnsName(nameToResolve, rpcUrl, registry)
         .then((addr) => {
+          if (!isCurrent()) return;
           setResolvedAddress(addr);
           setQrnsError(null);
         })
         .catch(() => {
+          if (!isCurrent()) return;
           setResolvedAddress(null);
           setQrnsError(t("transfer.qrnsResolutionFailed"));
         })
-        .finally(() => setQrnsResolving(false));
+        .finally(() => {
+          if (!isCurrent()) return;
+          setQrnsResolving(false);
+        });
     }, 500);
 
     return () => clearTimeout(resolveTimerRef.current);

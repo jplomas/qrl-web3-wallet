@@ -206,7 +206,6 @@ describe("AddEditChainForm", () => {
         defaultBlockExplorerUrl: "https://testDefaultExplorerUrl",
         defaultIconUrl: "https://testDefaultIconUrl",
         isTestnet: false,
-        defaultWsRpcUrl: "http://127.0.0.1:8545",
         isCustomChain: true,
       },
     ];
@@ -288,7 +287,6 @@ describe("AddEditChainForm", () => {
         defaultBlockExplorerUrl: "https://testDefaultExplorerUrl",
         defaultIconUrl: "https://testDefaultIconUrl",
         isTestnet: false,
-        defaultWsRpcUrl: "http://127.0.0.1:8545",
         isCustomChain: true,
       },
       {
@@ -306,7 +304,6 @@ describe("AddEditChainForm", () => {
         defaultBlockExplorerUrl: "",
         defaultIconUrl: "",
         isTestnet: false,
-        defaultWsRpcUrl: "http://127.0.0.1:8545",
         isCustomChain: true,
       },
     ];
@@ -409,7 +406,10 @@ describe("AddEditChainForm", () => {
         defaultBlockExplorerUrl: "https://testDefaultExplorerUrl",
         defaultIconUrl: "https://testDefaultIconUrl",
         isTestnet: false,
-        defaultWsRpcUrl: "http://127.0.0.1:8545",
+        // Editing preserves the chain's existing subscription endpoint. The form
+        // used to overwrite it with a hardcoded loopback address for every chain
+        // (CIPH-QRLW326-20) and no longer sets the field at all.
+        defaultWsRpcUrl: "https://testDefaultRpcUrl",
         isCustomChain: true,
       },
     ];

@@ -29,6 +29,9 @@ describe("LedgerStore", () => {
   const mockGetMessageToSign = vi.fn<any>();
   const mockFromTxData = vi.fn<any>();
   const mockFromValuesArray = vi.fn<any>();
+  // Recovery agrees with whatever `from` the test signs for; the guard's
+  // rejection path is covered in signedTransactionGuard.test.ts.
+  const mockRecoverTransaction = vi.fn<any>();
 
   // Store instance will be dynamically imported
   let LedgerStore: typeof import("./ledgerStore").default;
@@ -120,6 +123,11 @@ describe("LedgerStore", () => {
         fromTxData: mockFromTxData,
         fromValuesArray: mockFromValuesArray,
       },
+      // Used by the shared sender-consistency guard the Ledger path now applies
+      // (CIPH-QRLW326-26). These tests cover serialisation, not signature
+      // recovery, so recovery is stubbed to agree; the guard's rejection path has
+      // its own tests in signedTransactionGuard.test.ts.
+      recoverTransaction: mockRecoverTransaction,
     }));
 
     vi.doMock("@/utilities/storageUtil", () => ({
@@ -943,6 +951,27 @@ describe("LedgerStore", () => {
         signature: "0xabcdef",
         rawTransaction: "0xrawtx",
       });
+      // The sender-consistency guard recovers the signer from the assembled
+      // transaction; with synthetic fixtures it must be stubbed to agree.
+      mockRecoverTransaction.mockReturnValue(mockAccounts[0].address);
+    });
+
+    it("rejects a signed transaction whose recovered sender is not the account", async () => {
+      // CIPH-QRLW326-26. The Ledger path previously serialised and broadcast with
+      // no sender check, so a stale stored address would transact successfully
+      // while the wallet filed it against an account that is not the on-chain
+      // sender.
+      mockRecoverTransaction.mockReturnValue(
+        "Q" + "0".repeat(56) + "dead".repeat(10) + "0".repeat(32),
+      );
+
+      await expect(
+        store.signAndSerializeTransaction(
+          mockAccounts[0].address,
+          mockTxData,
+          mockCommon,
+        ),
+      ).rejects.toThrow(/sender mismatch/i);
     });
 
     it("should sign and serialize transaction successfully", async () => {

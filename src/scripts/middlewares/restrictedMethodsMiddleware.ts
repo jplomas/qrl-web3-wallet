@@ -282,18 +282,21 @@ export const restrictedMethodsMiddleware: JsonRpcMiddleware<
     )
   ) {
     if (isRequestPending) {
-      try {
-        const settings = await StorageUtil.getSettings();
-        if (!settings.sidePanelPreferred) {
-          await browser.action.openPopup();
-        }
-      } finally {
-        res.error = providerErrors.unsupportedMethod({
-          message: "A request is already pending",
-        });
-      }
+      // Do not open the wallet UI here. This branch is reachable by any page on
+      // demand, so calling `action.openPopup()` let a rejected caller pop the
+      // approval surface over the page on its own schedule — the setup step for
+      // substituting a prompt under the user's cursor. See CIPH-QRLW326-5.
+      res.error = providerErrors.unsupportedMethod({
+        message: "A request is already pending",
+      });
       return end();
     } else {
+      // Claim the slot before the first `await`. The check and the set used to be
+      // separated by several storage reads, so two concurrent requests could both
+      // observe it free, both enter the approval flow, and both write the single
+      // pending-request slot — the later write silently replacing the prompt the
+      // user was about to click. See CIPH-QRLW326-5.
+      isRequestPending = true;
       // check if the request can proceed
       const precheckResult = await checkRequestCanProceed(req);
       const { canProceed, proceedError } = precheckResult;
@@ -304,6 +307,7 @@ export const restrictedMethodsMiddleware: JsonRpcMiddleware<
       if (!canProceed) {
         // @ts-expect-error - proceedError type from provider library is not assignable to res.error's narrow type
         res.error = proceedError;
+        isRequestPending = false;
         return end();
       }
 
@@ -312,10 +316,12 @@ export const restrictedMethodsMiddleware: JsonRpcMiddleware<
         await checkRequestCanCompleteSilently(req);
       if (hasCompleted) {
         res.result = completionResult;
+        isRequestPending = false;
         return end();
       } else if (completionError) {
         // @ts-expect-error - completionError type from rpcErrors is not assignable to res.error's narrow type
         res.error = completionError;
+        isRequestPending = false;
         return end();
       }
 
@@ -326,7 +332,6 @@ export const restrictedMethodsMiddleware: JsonRpcMiddleware<
         hasApproved: false,
       };
       try {
-        isRequestPending = true;
         restrictedMethodResult = await getRestrictedMethodResult(
           req,
           authorizedChainId,
@@ -334,8 +339,22 @@ export const restrictedMethodsMiddleware: JsonRpcMiddleware<
       } finally {
         isRequestPending = false;
         const hasApproved = restrictedMethodResult?.hasApproved;
-        if (hasApproved) {
-          switch (restrictedMethodResult?.method) {
+        // Dispatch on the method of the request *we* are serving, not the one the
+        // approval UI echoed back. The two are separate values with separate
+        // provenance, and this is the last place a divergence between them could
+        // be caught — so treat a mismatch as an error rather than acting on the
+        // UI's claim. See CIPH-QRLW326-22.
+        const respondedMethod = restrictedMethodResult?.method;
+        if (hasApproved && respondedMethod && respondedMethod !== req.method) {
+          console.warn(
+            "QrlWeb3Wallet: approval response method does not match the request",
+            { requested: req.method, responded: respondedMethod },
+          );
+          res.error = providerErrors.unauthorized({
+            message: "The approval response did not match the request.",
+          });
+        } else if (hasApproved) {
+          switch (req.method) {
             case RESTRICTED_METHODS.WALLET_ADD_QRL_CHAIN:
             case RESTRICTED_METHODS.WALLET_SWITCH_QRL_CHAIN: {
               const switchApproved = !!restrictedMethodResult?.response?.result;

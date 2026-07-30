@@ -5,6 +5,7 @@ import browser from "webextension-polyfill";
 import { UNRESTRICTED_METHODS } from "../constants/requestConstants";
 import { EXTENSION_MESSAGES } from "../constants/streamConstants";
 import { checkUrlOriginHasBeenConnected } from "../utils/restrictedMethodsMiddlewareUtils";
+import type { ExtendedSenderData } from "./appendSenderDataMiddleware";
 
 const QRL_WALLET_DAPP_CONNECTION_REQUIRED_METHODS: string[] = [
   UNRESTRICTED_METHODS.QRL_ACCOUNTS,
@@ -30,10 +31,22 @@ const getUnrestrictedMethodResult = async (
   req: JsonRpcRequest<JsonRpcRequest>,
 ) => {
   const tabId = req?.senderData?.tabId ?? 0;
-  return await browser.tabs.sendMessage(tabId, {
-    name: EXTENSION_MESSAGES.UNRESTRICTED_METHOD_CALLS,
-    data: req,
-  });
+  // `senderData` is typed by the provider library without our added fields; the
+  // value is stamped by appendSenderDataMiddleware.
+  const { frameId } = (req?.senderData ?? {}) as ExtendedSenderData;
+  // Address the reply to the frame that asked. Without `frameId` the message goes
+  // to *every* frame in the tab and each one independently performs the upstream
+  // RPC, so a page with N iframes amplified one provider call into N requests
+  // against the user's node — and executed side-effecting methods
+  // (`qrl_sendRawTransaction`, `qrl_subscribe`) N times. See CIPH-QRLW326-21.
+  return await browser.tabs.sendMessage(
+    tabId,
+    {
+      name: EXTENSION_MESSAGES.UNRESTRICTED_METHOD_CALLS,
+      data: req,
+    },
+    typeof frameId === "number" ? { frameId } : undefined,
+  );
 };
 
 type UnrestrictedMethodValue =

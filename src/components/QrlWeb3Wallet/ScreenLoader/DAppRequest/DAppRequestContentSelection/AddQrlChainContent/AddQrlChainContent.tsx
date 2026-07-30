@@ -34,11 +34,13 @@ const AddQrlChainContent = observer(() => {
           rpcUrls: blockchain?.rpcUrls,
           blockExplorerUrls: blockchain?.blockExplorerUrls,
           iconUrls: blockchain?.iconUrls,
+          // `rpcUrls[0]` becomes the live provider for this chain. The middleware
+          // now requires every entry to be acceptable before the prompt is ever
+          // shown (CIPH-QRLW326-7), so index 0 is safe to adopt here.
           defaultRpcUrl: blockchain?.rpcUrls?.[0] ?? "",
           defaultBlockExplorerUrl: blockchain?.blockExplorerUrls?.[0] ?? "",
           defaultIconUrl: blockchain?.iconUrls?.[0] ?? "",
           isTestnet: false,
-          defaultWsRpcUrl: "http://127.0.0.1:8545",
           isCustomChain: true,
         });
         if (!chainFound) {

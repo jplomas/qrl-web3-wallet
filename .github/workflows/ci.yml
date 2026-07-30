@@ -2,9 +2,9 @@ name: CI
 
 # Lint, test, and build qrl-web3-wallet on push/PR.
 #
-# Release artifacts (the Chrome extension .zip) are produced separately by
-# `build.yaml`, which fires on `release: created` and uploads to the GitHub
-# Release. semantic-release in `release.yml` triggers that flow.
+# Release artifacts (the Chrome extension .zip) are produced by the
+# `build-and-upload` job inside `release.yml`, which runs after semantic-release
+# reports a new version. There is no separate `build.yaml`.
 
 on:
   push:
@@ -37,7 +37,12 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        # `npm ci` (not `npm install`) so the lockfile is enforced: `npm install`
+        # treats it as advisory and re-resolves transitive `^` ranges, meaning the
+        # tree CI tests need not be the pinned, audited one. `npm ci` additionally
+        # fails outright if package.json and the lockfile disagree, so no separate
+        # drift check is needed. CIPH-QRLW326-11.
+        run: npm ci
 
       - name: Lint
         run: npm run lint

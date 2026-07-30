@@ -151,6 +151,13 @@ const mockedStoreValues: StoreType = {
       hasCompleted: false,
     },
     readDAppRequestData: async () => {},
+    requestingOrigin: "http://localhost",
+    // Approval screens seed their selection from the *requesting* origin's grants
+    // rather than the active tab's (CIPH-QRLW326-6); a first-time origin has none.
+    getRequestingOriginGrants: async () => ({
+      accounts: [],
+      blockchains: [],
+    }),
     addToResponseData: (_data: any) => {},
     setCanProceed: (_decision: boolean) => {},
     setOnPermissionCallBack: (

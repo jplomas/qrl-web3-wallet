@@ -247,6 +247,15 @@ const prepareListeners = () => {
         );
         return isSuccess;
       } else if (method === UNRESTRICTED_METHODS.QRL_UNSUBSCRIBE) {
+        // Fail loudly when the active chain declares no subscription endpoint.
+        // This used to be hardcoded to a loopback address for every chain, so the
+        // request never reached the chain in use and any page could drive POSTs to
+        // a fixed local port. See CIPH-QRLW326-20.
+        if (!defaultWsRpcUrl) {
+          throw new Error(
+            "Subscriptions are not configured for the active chain",
+          );
+        }
         const params = message?.data?.params;
         const response = await axios.post(
           `${defaultWsRpcUrl}/qrl_unsubscribe`,
@@ -335,6 +344,13 @@ const prepareListeners = () => {
         )?.transactionHash;
         return transactionHash;
       } else if (method === UNRESTRICTED_METHODS.QRL_SUBSCRIBE) {
+        // See CIPH-QRLW326-20 — no endpoint means no subscriptions, rather than a
+        // silent POST to localhost.
+        if (!defaultWsRpcUrl) {
+          throw new Error(
+            "Subscriptions are not configured for the active chain",
+          );
+        }
         const params = message.data.params;
         const response = await axios.post(`${defaultWsRpcUrl}/qrl_subscribe`, {
           params,

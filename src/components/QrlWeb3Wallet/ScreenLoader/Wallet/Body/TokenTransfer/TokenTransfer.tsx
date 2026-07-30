@@ -275,8 +275,16 @@ const TokenTransfer = observer(() => {
 
   async function onSubmit(formData: z.infer<typeof FormSchema>) {
     try {
-      // Use resolved QRNS address if available
+      // Use resolved QRNS address if available. The schema only validated the
+      // *name*, so the substituted address must be checked here too — this is the
+      // value that becomes the transaction recipient. See CIPH-QRLW326-4.
       if (isQrnsName(formData.receiverAddress) && resolvedAddress) {
+        if (!AddressUtil.isQrlAddress(resolvedAddress.trim())) {
+          control.setError("receiverAddress", {
+            message: t("validation.addressInvalid"),
+          });
+          return;
+        }
         formData = { ...formData, receiverAddress: resolvedAddress };
       }
 
@@ -536,8 +544,15 @@ const TokenTransfer = observer(() => {
 
   const watchedReceiver = watch("receiverAddress");
   const resolveTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  /** Monotonic id of the newest resolution; older ones must not write state. */
+  const resolveRequestIdRef = useRef(0);
   useEffect(() => {
     clearTimeout(resolveTimerRef.current);
+    // Invalidate any in-flight resolution on *every* run of this effect, before
+    // the branch below. Bumping it only on the QRNS path would leave a slow
+    // resolution live when the user replaced the name with a literal address.
+    const requestId = ++resolveRequestIdRef.current;
+    const isCurrent = () => resolveRequestIdRef.current === requestId;
 
     if (!watchedReceiver || !isQrnsName(watchedReceiver)) {
       setResolvedAddress(null);
@@ -554,17 +569,27 @@ const TokenTransfer = observer(() => {
     const registry = qrlStore.qrlConnection.blockchain.qrnsRegistryAddress;
     const nameToResolve = watchedReceiver.trim();
 
+    // The debounce cleanup cancels a pending *timer* but not an in-flight network
+    // call, so without the staleness token above a slow resolution for a
+    // previously typed name could land after the user had edited the field —
+    // setting `resolvedAddress` to the old name's address and re-enabling submit,
+    // after which `onSubmit` sent to the wrong recipient. See CIPH-QRLW326-18.
     resolveTimerRef.current = setTimeout(() => {
       resolveQrnsName(nameToResolve, rpcUrl, registry)
         .then((addr) => {
+          if (!isCurrent()) return;
           setResolvedAddress(addr);
           setQrnsError(null);
         })
         .catch(() => {
+          if (!isCurrent()) return;
           setResolvedAddress(null);
           setQrnsError(t("transfer.qrnsResolutionFailed"));
         })
-        .finally(() => setQrnsResolving(false));
+        .finally(() => {
+          if (!isCurrent()) return;
+          setQrnsResolving(false);
+        });
     }, 500);
 
     return () => clearTimeout(resolveTimerRef.current);

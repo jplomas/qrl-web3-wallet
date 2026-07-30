@@ -109,7 +109,6 @@ import LockManager, {
 
 const MOCK_KEYS: DecryptedKeyType[] = [
   {
-    password: "pass",
     address: "Q0000000000000000000000000000000000000000000000000000000020B714091cF2a62DADda2847803e3f1B9D2D377900000000000000000000000000000000",
     seed: "0x010000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     mnemonicPhrases: "word ".repeat(24).trim(),

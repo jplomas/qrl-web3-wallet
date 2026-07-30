@@ -141,7 +141,6 @@ const AddEditChainForm = observer(({ chainToEdit }: AddEditChainFormType) => {
       defaultBlockExplorerUrl,
       defaultIconUrl,
       isTestnet: false,
-      defaultWsRpcUrl: "http://127.0.0.1:8545",
       isCustomChain: true,
       qrnsRegistryAddress: normalizedQrnsRegistryAddress || undefined,
     };

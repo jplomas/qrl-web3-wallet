@@ -7,7 +7,23 @@ import type {
   ChangePasswordWorkerResponse,
 } from "@/scripts/workers/changePasswordWorker";
 import StorageUtil, { LockState } from "@/utilities/storageUtil";
+import {
+  migrateStoredAddresses,
+  type StoredAddressRemap,
+} from "@/utilities/storedAddressMigration";
 import { KeyStore, Web3BaseWalletAccount } from "@theqrl/web3";
+
+/**
+ * Storage keys whose change genuinely means the lock state may have moved: the
+ * service worker's session key cache, and the two lock-transition timestamps.
+ * Anything else — keep-alive heartbeats, price caches, account metadata — must
+ * not trigger a lock-state query.
+ */
+const LOCK_STATE_STORAGE_KEYS: ReadonlySet<string> = new Set([
+  "_LM_CACHED_KEYS",
+  "LOCK_MANAGER_LOCKED_TIMESTAMP",
+  "LOCK_MANAGER_UNLOCKED_TIMESTAMP",
+]);
 import { action, makeAutoObservable, runInAction } from "mobx";
 import browser from "webextension-polyfill";
 
@@ -110,7 +126,16 @@ class LockStore {
   }
 
   initializeStorageListener() {
-    browser.storage.onChanged.addListener(async () => {
+    browser.storage.onChanged.addListener(async (changes) => {
+      // React only to keys that actually describe the lock state. The listener
+      // used to fire on *every* change in *every* area, which meant the service
+      // worker's ~24 s keep-alive write and the 60 s price-cache write both
+      // triggered an IS_LOCKED round trip — the loop that defeated auto-lock.
+      // See CIPH-QRLW326-3.
+      const isLockStateChange = Object.keys(changes).some((key) =>
+        LOCK_STATE_STORAGE_KEYS.has(key),
+      );
+      if (!isLockStateChange) return;
       await this.readLockState();
     });
   }
@@ -316,6 +341,7 @@ class LockStore {
     const workerResult = await new Promise<{
       keys: DecryptedKeyType[];
       upgradedKeystores?: KeyStore[];
+      addressMigrations?: StoredAddressRemap[];
     } | null>((resolve) => {
       const worker = new Worker(
         new URL("../scripts/workers/unlockWorker.ts", import.meta.url),
@@ -326,6 +352,7 @@ class LockStore {
           success: boolean;
           keys?: DecryptedKeyType[];
           upgradedKeystores?: KeyStore[];
+          addressMigrations?: StoredAddressRemap[];
         }>,
       ) => {
         worker.terminate();
@@ -333,6 +360,7 @@ class LockStore {
           resolve({
             keys: event.data.keys,
             upgradedKeystores: event.data.upgradedKeystores,
+            addressMigrations: event.data.addressMigrations,
           });
         } else {
           resolve(null);
@@ -351,9 +379,32 @@ class LockStore {
     }
     const decryptedKeys = workerResult.keys;
 
-    // If the worker re-encrypted any keystores with stronger KDF parameters,
-    // persist them in place of the previous keystores so the user benefits
-    // automatically without re-entering their password.
+    // If the worker repaired any pre-64-byte address labels, repoint the stored
+    // data that referenced the old addresses first. Doing this before the
+    // keystores stop advertising the old labels means an interrupted migration
+    // is retryable rather than leaving orphaned data behind a completed relabel.
+    if (workerResult.addressMigrations?.length) {
+      try {
+        const changed = await migrateStoredAddresses(
+          workerResult.addressMigrations,
+        );
+        if (changed.length) {
+          console.info(
+            `QrlWeb3Wallet: migrated stored addresses in ${changed.join(", ")}`,
+          );
+        }
+      } catch (error) {
+        console.warn(
+          "QrlWeb3Wallet: failed to migrate stored addresses",
+          error,
+        );
+      }
+    }
+
+    // If the worker re-encrypted any keystores with stronger KDF parameters, or
+    // rewrote a stale address label, persist them in place of the previous
+    // keystores so the user benefits automatically without re-entering their
+    // password.
     if (workerResult.upgradedKeystores?.length) {
       try {
         await StorageUtil.setKeystores(workerResult.upgradedKeystores);

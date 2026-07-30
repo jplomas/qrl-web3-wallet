@@ -7,7 +7,9 @@ type HexSeedListingProps = {
 
 const HexSeedListing = ({ hexSeed = "" }: HexSeedListingProps) => {
   const { t } = useTranslation();
-  const { prefix, addressSplit } = StringUtil.getSplitAddress(hexSeed, 3);
+  // A hex seed is a secret, not an address — group it for display without routing
+  // it through the address-checksum path. See CIPH-QRLW326-19.
+  const { prefix, addressSplit } = StringUtil.splitForDisplay(hexSeed, 3);
 
   return (
     <div className="space-y-2">

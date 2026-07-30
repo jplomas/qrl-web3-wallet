@@ -300,18 +300,39 @@ export const checkWalletAddQrlChainParams = async (
   }
 
   const rpcUrls = chainData?.rpcUrls;
+  // EVERY entry must be acceptable, not merely one of them. The endpoint the
+  // wallet actually talks to is `rpcUrls[0]` (AddQrlChainContent assigns it to
+  // `defaultRpcUrl`), and that index is chosen by the caller — so accepting the
+  // array on the strength of some *other* element let a dApp install a cleartext,
+  // attacker-controlled endpoint as the live provider. See CIPH-QRLW326-7.
   if (
     !rpcUrls ||
     !Array.isArray(rpcUrls) ||
     rpcUrls.length === 0 ||
-    !rpcUrls.find((rpcUrl) => isAcceptableUrl(rpcUrl))
+    !rpcUrls.every((rpcUrl) => isAcceptableUrl(rpcUrl))
   ) {
     return {
       canProceed: false,
       proceedError: rpcErrors.invalidParams({
-        message: `Expected an array with at least one valid string HTTPS url 'rpcUrls', Received: ${rpcUrls}`,
+        message: `Expected an array of valid HTTPS (or loopback) urls in 'rpcUrls'. Received: ${rpcUrls}`,
       }),
     };
+  }
+  // Validate the endpoints that are actually used, not just the advertised list.
+  // See CIPH-QRLW326-7 (defaultRpcUrl) and CIPH-QRLW326-20 (defaultWsRpcUrl).
+  for (const key of ["defaultRpcUrl", "defaultWsRpcUrl"] as const) {
+    const supplied = (chainData as Record<string, unknown>)?.[key];
+    if (
+      supplied !== undefined &&
+      (typeof supplied !== "string" || !isAcceptableUrl(supplied))
+    ) {
+      return {
+        canProceed: false,
+        proceedError: rpcErrors.invalidParams({
+          message: `Expected a valid HTTPS (or loopback) url '${key}'. Received: ${supplied}`,
+        }),
+      };
+    }
   }
 
   const nativeCurrency = chainData?.nativeCurrency;

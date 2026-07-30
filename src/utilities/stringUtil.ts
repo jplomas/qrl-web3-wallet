@@ -21,12 +21,56 @@ export const sanitizeForDisplay = (input: string): SanitizedDisplay => {
  * A utility for handling string related operations
  */
 class StringUtil {
+  /**
+   * Render an address in checksummed form, falling back to the input when it is
+   * not a valid QRL address.
+   *
+   * The fallback is deliberate — several call sites pass values that are not
+   * addresses at all — but it used to swallow *every* error, so an invalid
+   * address, a validation failure and an outright bug in the checksum function
+   * were indistinguishable from success. That is how a total failure of
+   * checksummed display went unnoticed. Anything other than a rejected address is
+   * now reported. See CIPH-QRLW326-19.
+   */
   static getDisplayAddress(address: string): string {
-    try {
-      return AddressUtil.toChecksumQrlAddress(address);
-    } catch {
+    if (!AddressUtil.isQrlAddress(address?.trim?.() ?? "")) {
+      // Not an address (or not a valid one): nothing to checksum, and no error.
       return address;
     }
+    try {
+      return AddressUtil.toChecksumQrlAddress(address);
+    } catch (error) {
+      // The address validated but checksumming still failed, which means the
+      // display-integrity control is not working. Do not hide that.
+      console.error(
+        "QrlWeb3Wallet: failed to checksum a valid QRL address for display",
+        error,
+      );
+      return address;
+    }
+  }
+
+  /**
+   * Group a long value into fixed-width chunks for readability, keeping its
+   * leading prefix (`Q` or `0x`) separate.
+   *
+   * Address-agnostic on purpose: use this for anything that is not an address —
+   * notably hex seeds, which must not be passed through the address-checksum path
+   * in {@link getDisplayAddress}. See CIPH-QRLW326-19.
+   */
+  static splitForDisplay(
+    value: string,
+    splitLength: number = 5,
+    prefixLength?: number,
+  ) {
+    const resolvedPrefixLength =
+      prefixLength ?? (value?.startsWith("Q") ? 1 : 2);
+    const prefix = value?.substring(0, resolvedPrefixLength);
+    const addressSplit: string[] = [];
+    for (let i = resolvedPrefixLength; i < value?.length; i += splitLength) {
+      addressSplit.push(value?.substring(i, i + splitLength));
+    }
+    return { prefix, addressSplit };
   }
 
   /**
@@ -37,19 +81,11 @@ class StringUtil {
     splitLength: number = 5,
     prefixLength?: number,
   ) {
-    const displayAddress = StringUtil.getDisplayAddress(accountAddress);
-    const resolvedPrefixLength =
-      prefixLength ?? (displayAddress?.startsWith("Q") ? 1 : 2);
-    const prefix = displayAddress?.substring(0, resolvedPrefixLength);
-    const addressSplit: string[] = [];
-    for (
-      let i = resolvedPrefixLength;
-      i < displayAddress?.length;
-      i += splitLength
-    ) {
-      addressSplit.push(displayAddress?.substring(i, i + splitLength));
-    }
-    return { prefix, addressSplit };
+    return StringUtil.splitForDisplay(
+      StringUtil.getDisplayAddress(accountAddress),
+      splitLength,
+      prefixLength,
+    );
   }
 
   /**

@@ -11,7 +11,12 @@ import { BlockchainDataType } from "@/configuration/qrlBlockchainConfig";
 const QrlRequestAccountContent = observer(() => {
   const { t } = useTranslation();
   const { dAppRequestStore } = useStore();
-  const { addToResponseData, setCanProceed, currentTabData } = dAppRequestStore;
+  const {
+    addToResponseData,
+    setCanProceed,
+    setOnPermissionCallBack,
+    getRequestingOriginGrants,
+  } = dAppRequestStore;
 
   const [isLoadingBlockchains, setIsLoadingBlockchains] = useState(true);
   const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
@@ -25,12 +30,17 @@ const QrlRequestAccountContent = observer(() => {
   useEffect(() => {
     (async () => {
       const allBlockchains = await StorageUtil.getAllBlockChains();
-      setSelectedAccounts(currentTabData?.connectedAccounts ?? []);
+      // Seed from the grants held by the origin that made *this* request, not by
+      // whatever tab happens to be active. A request from a cross-origin iframe or
+      // a background tab used to arrive pre-ticked with the victim dApp's accounts,
+      // turning the grant into a single frictionless click. See CIPH-QRLW326-6.
+      const { accounts, blockchains } = await getRequestingOriginGrants();
+      setSelectedAccounts(accounts);
       setAllBlockchains(allBlockchains);
-      setSelectedBlockchains(currentTabData?.connectedBlockchains ?? []);
+      setSelectedBlockchains(blockchains);
       setIsLoadingBlockchains(false);
     })();
-  }, [currentTabData]);
+  }, [getRequestingOriginGrants, dAppRequestStore.dAppRequestData]);
 
   useEffect(() => {
     addToResponseData({
@@ -39,6 +49,17 @@ const QrlRequestAccountContent = observer(() => {
     });
     setCanProceed(!!selectedAccounts.length && !!selectedBlockchains.length);
   }, [selectedAccounts, selectedBlockchains]);
+
+  // Register an explicit no-op handler for this request.
+  //
+  // Granting the connection is done by the service worker's post-approval branch
+  // from `responseData`, so there is genuinely nothing for this screen to do on
+  // approval. Registering anyway is the point: this was the only approval screen
+  // that installed no handler, so whatever the previous request had installed
+  // stayed live and was executed by the user's click on *this* prompt.
+  useEffect(() => {
+    setOnPermissionCallBack(async () => undefined);
+  }, [setOnPermissionCallBack, dAppRequestStore.dAppRequestData]);
 
   const onAccountSelection = (selectedAccount: string, checked: boolean) => {
     let updatedAccounts = selectedAccounts;
