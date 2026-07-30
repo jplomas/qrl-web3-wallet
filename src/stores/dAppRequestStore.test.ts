@@ -164,6 +164,31 @@ describe("DAppRequestStore — permission prompts seed from the requesting origi
       blockchains: [],
     });
   });
+
+  it.each([
+    ["file:///Users/victim/evil.html", "a local file"],
+    ["data:text/html,<script>1</script>", "a data url"],
+  ])("treats an opaque origin (%s) as unidentifiable", async (url) => {
+    // `new URL(url).origin` serialises an opaque origin to the literal string
+    // "null", which is a perfectly usable storage key — so a getter deriving its
+    // own origin would read grants from a bucket shared by every unrelated
+    // opaque context. The middleware side was hardened for this; the read path
+    // must agree. See CIPH-QRLW326-31 and -39.
+    grantsByOrigin["null"] = {
+      accounts: ["Qalice"],
+      blockchains: [{ chainId: "0x1" }],
+    };
+    await setPendingRequest(store, {
+      ...CONNECT_REQUEST,
+      requestData: { senderData: { url } } as never,
+    });
+
+    expect(store.requestingOrigin).toBe("");
+    await expect(store.getRequestingOriginGrants()).resolves.toEqual({
+      accounts: [],
+      blockchains: [],
+    });
+  });
 });
 
 describe("DAppRequestStore — approval handler binding", () => {

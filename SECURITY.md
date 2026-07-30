@@ -18,7 +18,9 @@ The QRL security programme, including reward terms and scope, is documented at [
 
 ## What cryptography is used, and where
 
-This extension is not a cryptography implementation. Every primitive comes from an upstream QRL library, and this document records which one is used at which point so a reviewer knows where to look. Issues in the primitives themselves belong upstream, principally [go-qrllib](https://github.com/theQRL/go-qrllib), [wallet.js](https://github.com/theQRL/wallet.js) and [web3.js](https://github.com/theQRL/web3.js).
+This extension is not a cryptography implementation. Every primitive is provided by a library, and this document records which one is used at which point so a reviewer knows where to look.
+
+The QRL-specific primitives — signatures, seed handling, address derivation — come from [go-qrllib](https://github.com/theQRL/go-qrllib), [wallet.js](https://github.com/theQRL/wallet.js) and [web3.js](https://github.com/theQRL/web3.js), and issues in them belong upstream there. Two dependencies are not QRL's: Argon2id is [`@noble/hashes`](https://github.com/paulmillr/noble-hashes), and AES-256-GCM and `getRandomValues` are the browser's own WebCrypto, reached through `@theqrl/qrl-cryptography`. Issues in those belong to their respective projects, or to the browser.
 
 ### Signatures
 
@@ -72,7 +74,9 @@ A practical consequence: addresses must be compared in full. A matching head and
 | Salt | 32 bytes, fresh per encryption |
 | Cipher | AES-256-GCM, 12-byte IV fresh per encryption, 128-bit authentication tag |
 | Implementation | `@noble/hashes` (Argon2id) and WebCrypto via `@theqrl/qrl-cryptography` |
-| Stored in | `chrome.storage.local`, ciphertext only |
+| Stored in | `chrome.storage.local` — see below for exactly what |
+
+**What a stored keystore contains.** The only *secret* held at rest is the seed, and it is held as ciphertext — the plaintext seed is never written to any storage area. Alongside it, a keystore records the non-secret metadata needed to open it again and to identify it: the KDF name and its parameters, the salt, the IV, the GCM authentication tag, and the account's address. None of that is confidential — the address is public by construction and the KDF parameters are recoverable from the work an attacker would do anyway — but it is not encrypted, so an attacker with local file access learns which addresses this wallet holds. Treat the address list as disclosed to anyone who can read the profile directory.
 
 The Argon2id output *is* the AES key, so the parameters recorded in a keystore cannot be rewritten to weaken an offline attack. A changed parameter set yields a different key and the GCM tag check fails. Parameters are additionally bounded on both the encrypt and decrypt paths, and the wallet passes its own recommended set explicitly (`src/scripts/lockManager/keystoreParams.ts`) rather than relying on library defaults. Passwords are NFC-normalised before use so the same typed password produces the same bytes across platforms and input methods.
 

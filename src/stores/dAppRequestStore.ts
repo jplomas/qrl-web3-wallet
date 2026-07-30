@@ -5,6 +5,7 @@ import {
   DAppResponseType,
 } from "@/scripts/middlewares/middlewareTypes";
 import { getSerializableObject } from "@/scripts/utils/scriptUtils";
+import { getRequestOrigin } from "@/utilities/originUtil";
 import StorageUtil from "@/utilities/storageUtil";
 import { action, makeAutoObservable, observable } from "mobx";
 import browser from "webextension-polyfill";
@@ -135,14 +136,15 @@ class DAppRequestStore {
    * background tab is a different origin entirely — so seeding a permission
    * prompt from it offered the attacker's origin the victim dApp's own account
    * set, pre-selected. See CIPH-QRLW326-6.
+   *
+   * Derived by the shared `getRequestOrigin` rather than by a local `new URL`,
+   * so an opaque origin — which serialises to the literal string `"null"` — is
+   * normalised to `""` here exactly as it is on the middleware side. A getter
+   * with its own derivation would read grants keyed by `"null"` even though the
+   * write path refuses to create them. See CIPH-QRLW326-31 and -39.
    */
   get requestingOrigin(): string {
-    const url = this.dAppRequestData?.requestData?.senderData?.url ?? "";
-    try {
-      return new URL(url).origin;
-    } catch {
-      return "";
-    }
+    return getRequestOrigin(this.dAppRequestData?.requestData?.senderData?.url);
   }
 
   /**

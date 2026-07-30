@@ -109,4 +109,27 @@ describe("withMiddlewareErrorBoundary", () => {
     expect(end).toHaveBeenCalledOnce();
     errorLog.mockRestore();
   });
+
+  it("discards a result written before the throw", async () => {
+    // A response carrying both `result` and `error` violates JSON-RPC 2.0, and a
+    // client that reads `result` first would treat the failed request as having
+    // succeeded — the opposite of failing closed.
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { res, next, end } = makeCall();
+    const inner = vi.fn(async (_req: unknown, response: { result?: unknown }) => {
+      response.result = ["Qdeadbeef"];
+      throw new Error("boom after writing a result");
+    });
+
+    await withMiddlewareErrorBoundary(inner as never, "inner")(
+      req,
+      res as never,
+      next as never,
+      end as never,
+    );
+
+    expect(res.error).toBeDefined();
+    expect("result" in res).toBe(false);
+    errorLog.mockRestore();
+  });
 });

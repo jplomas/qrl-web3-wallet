@@ -429,7 +429,7 @@ describe("ledgerApdu", () => {
     });
 
     it("should parse a full ML-DSA-87 public key", () => {
-      // 'Q' prefix + 64 bytes address + 2528 bytes Dilithium key + success status
+      // 'Q' prefix + 64 bytes address + 2592 bytes ML-DSA-87 key + success status
       const addressBytes = Buffer.alloc(QRL_ADDRESS_BYTES, 0xab);
       const publicKeyBytes = Buffer.alloc(ML_DSA_87_PUBLIC_KEY_SIZE, 0xdd);
       const response = Buffer.concat([
@@ -443,7 +443,7 @@ describe("ledgerApdu", () => {
 
       expect(result.address.startsWith("Q")).toBe(true);
       expect(result.publicKey).toMatch(/^0x/);
-      // 0x prefix + 2528 bytes as hex (2 chars per byte)
+      // 0x prefix + 2592 bytes as hex (2 chars per byte)
       expect(result.publicKey.length).toBe(2 + ML_DSA_87_PUBLIC_KEY_SIZE * 2);
     });
 

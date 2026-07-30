@@ -614,7 +614,27 @@ class LedgerStore {
     // not. Without it a stale stored address broadcasts successfully while the
     // wallet records the transaction against an account that is not the on-chain
     // sender. See CIPH-QRLW326-26.
-    assertSignedTransactionSender(rawTransaction, fromAddress);
+    //
+    // `signTransaction` above has already recorded `completed` / `success: true`,
+    // because as far as the device is concerned the signing did succeed. Throwing
+    // from here without correcting that leaves the store advertising a successful
+    // signature for a transaction the wallet has just refused, so any observer of
+    // `signingState` — a spinner, a retry button, a success toast — disagrees with
+    // what actually happened.
+    try {
+      assertSignedTransactionSender(rawTransaction, fromAddress);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : LEDGER_ERROR_MESSAGES.SIGNING_FAILED;
+      runInAction(() => {
+        this.signingState = "error";
+        this.signingStatus = { state: "error", message: errorMessage };
+        this.signResult = { success: false, error: errorMessage };
+      });
+      throw error;
+    }
     return rawTransaction;
   }
 

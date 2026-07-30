@@ -56,18 +56,31 @@ self.onmessage = async (event: MessageEvent<UnlockWorkerRequest>) => {
         mnemonicPhrases: getMnemonicFromHexSeed(seed),
       });
       if (shouldUpgradeKeystoreParams(keyStore)) {
-        if (!upgradedKeystores) {
-          upgradedKeystores = [...keystores];
+        // The KDF upgrade is opportunistic: the seed is already recovered and
+        // the user's password was correct. A failure here must not reach the
+        // outer catch, which reports `success: false` — surfaced to the user as
+        // "the entered password is incorrect". Skip the upgrade and stay
+        // unlocked; `shouldUpgradeKeystoreParams` will ask again next time.
+        try {
+          const reEncrypted = await encrypt(
+            seed,
+            normalisedPassword,
+            RECOMMENDED_KEYSTORE_KDF_PARAMS,
+          );
+          // Match by position, not by address. Comparing `k.address?.toLowerCase()`
+          // pairs `undefined === undefined`, so a keystore with no label matched
+          // the first other unlabelled entry and overwrote it.
+          const idx = keystores.indexOf(keyStore);
+          if (idx >= 0) {
+            if (!upgradedKeystores) upgradedKeystores = [...keystores];
+            upgradedKeystores[idx] = reEncrypted;
+          }
+        } catch (error) {
+          console.warn(
+            "QrlWeb3Wallet: keystore KDF upgrade failed; keeping existing parameters",
+            error,
+          );
         }
-        const reEncrypted = await encrypt(
-          seed,
-          normalisedPassword,
-          RECOMMENDED_KEYSTORE_KDF_PARAMS,
-        );
-        const idx = upgradedKeystores.findIndex(
-          (k) => k.address?.toLowerCase() === keyStore.address?.toLowerCase(),
-        );
-        if (idx >= 0) upgradedKeystores[idx] = reEncrypted;
       }
     }
     self.postMessage({

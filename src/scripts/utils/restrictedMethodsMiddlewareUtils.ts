@@ -8,6 +8,7 @@ import StorageUtil from "@/utilities/storageUtil";
 import { MAX_SAFE_CHAIN_ID } from "@/constants/blockchain";
 import { BlockchainDataType } from "@/configuration/qrlBlockchainConfig";
 import AddressUtil from "@/utilities/addressUtil";
+import { getRequestOrigin } from "@/utilities/originUtil";
 import {
   CAVEAT_TYPES,
   DAppRequestType,
@@ -31,24 +32,14 @@ const getFromAddress = (req: JsonRpcRequest<JsonRpcRequest>) => {
 };
 
 /**
- * The origin that made a request, or `""` when it cannot be identified.
- *
- * Opaque origins serialise to the string `"null"` — `file://` documents and
- * sandboxed frames all produce it — so keying permissions by them puts every
- * such document in one shared bucket: a grant made from one local file would be
- * held by any other, including files arriving from untrusted sources. Returning
- * `""` makes the authorisation checks fail closed (no stored grant can match) and
- * prevents a grant ever being written for an unidentifiable origin.
- * See CIPH-QRLW326-31.
+ * The origin that made a request, or `""` when it cannot be identified — which
+ * makes every authorisation check below fail closed. Opaque origins (`file://`,
+ * sandboxed frames) are the case that matters; the rationale is in
+ * `@/utilities/originUtil`, which is where the implementation lives so the
+ * approval-screen store shares it rather than deriving an origin of its own.
+ * See CIPH-QRLW326-31 and CIPH-QRLW326-39.
  */
-export const getRequestOrigin = (url: string | undefined): string => {
-  try {
-    const origin = new URL(url ?? "").origin;
-    return origin === "null" ? "" : origin;
-  } catch {
-    return "";
-  }
-};
+export { getRequestOrigin };
 
 export const checkAccountHasBeenAuthorized = async (
   req: JsonRpcRequest<JsonRpcRequest>,

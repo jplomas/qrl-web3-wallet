@@ -29,6 +29,11 @@ export const withMiddlewareErrorBoundary = (
         `QrlWeb3Wallet: unhandled error in ${name}; failing the request closed`,
         error,
       );
+      // A middleware that wrote a result and *then* threw would otherwise
+      // settle carrying both `result` and `error`. JSON-RPC 2.0 forbids that,
+      // and a client reading `result` first would treat a failed request as a
+      // successful one — the opposite of failing closed.
+      delete res.result;
       res.error = rpcErrors.internal({
         message: "The wallet could not process the request.",
       });
